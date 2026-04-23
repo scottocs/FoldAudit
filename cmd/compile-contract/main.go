@@ -22,8 +22,8 @@ type solcInput struct {
 }
 
 type solcSettings struct {
-	Optimizer       solcOptimizer                        `json:"optimizer"`
-	OutputSelection map[string]map[string][]string       `json:"outputSelection"`
+	Optimizer       solcOptimizer                  `json:"optimizer"`
+	OutputSelection map[string]map[string][]string `json:"outputSelection"`
 }
 
 type solcOptimizer struct {
@@ -42,8 +42,12 @@ type solcOutput struct {
 type solcContract struct {
 	ABI json.RawMessage `json:"abi"`
 	EVM struct {
-		Bytecode        struct{ Object string `json:"object"` } `json:"bytecode"`
-		DeployedBytecode struct{ Object string `json:"object"` } `json:"deployedBytecode"`
+		Bytecode struct {
+			Object string `json:"object"`
+		} `json:"bytecode"`
+		DeployedBytecode struct {
+			Object string `json:"object"`
+		} `json:"deployedBytecode"`
 	} `json:"evm"`
 }
 
@@ -55,6 +59,7 @@ type artifact struct {
 	SolcVersion      string          `json:"solcVersion"`
 }
 
+// main 读取 Solidity 源码，通过 solc standard-json 编译合约，并把 ABI 与字节码写成本地 artifact。
 func main() {
 	contractsDir := flag.String("dir", "contracts", "path to contracts directory")
 	flag.Parse()

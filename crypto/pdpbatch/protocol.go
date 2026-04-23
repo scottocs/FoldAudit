@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const DefaultPrimeModulus uint64 = 2_305_843_009_213_693_951
+const DefaultPrimeModulus = "52435875175126190479447740508185965837690552500527637822603658699938581184513"
 
 type AuthMode string
 
@@ -23,13 +23,14 @@ type ProtocolConfig struct {
 	ChunksPerFile    int
 	SectorsPerChunk  int
 	ChallengedChunks int
-	PrimeModulus     uint64
+	PrimeModulus     string
 	FieldBytes       int
 	GroupBytes       int
 	HashBytes        int
 	RNGSeed          int64
 }
 
+// DefaultProtocolConfig 返回一组适合本地演示和快速基准测试的默认协议参数。
 func DefaultProtocolConfig() ProtocolConfig {
 	return ProtocolConfig{
 		NumFiles:         4,
@@ -44,6 +45,7 @@ func DefaultProtocolConfig() ProtocolConfig {
 	}
 }
 
+// Validate 检查协议参数是否满足批量 PDP 流程的基本边界条件。
 func (c ProtocolConfig) Validate() error {
 	if c.NumFiles <= 0 {
 		return errors.New("num files must be positive")
@@ -57,8 +59,8 @@ func (c ProtocolConfig) Validate() error {
 	if c.ChallengedChunks <= 0 || c.ChallengedChunks > c.ChunksPerFile {
 		return errors.New("challenged chunks must be in [1, chunks per file]")
 	}
-	if c.PrimeModulus <= 2 {
-		return errors.New("prime modulus must be greater than two")
+	if c.PrimeModulus == "" {
+		return errors.New("prime modulus must be set")
 	}
 	if c.FieldBytes <= 0 || c.GroupBytes <= 0 || c.HashBytes <= 0 {
 		return errors.New("byte-size parameters must be positive")
@@ -67,7 +69,7 @@ func (c ProtocolConfig) Validate() error {
 }
 
 type StoredFile struct {
-	Sectors     [][]uint64
+	Sectors     [][]Scalar
 	Polynomials []Polynomial
 	Tags        []GroupElement
 	MerkleTree  *MerkleTree
@@ -80,16 +82,25 @@ type StoredBatch struct {
 
 type Challenge struct {
 	Indices          []int
-	Coefficients     map[int]uint64
-	EvaluationPoints []uint64
+	Coefficients     map[int]Scalar
+	EvaluationPoints []Scalar
 	Nonce            string
 }
 
+// ToPublicDict 将挑战转换为稳定的公开字典，用于 Fiat-Shamir transcript 哈希。
 func (c Challenge) ToPublicDict() map[string]any {
+	coefficients := make(map[string]string, len(c.Coefficients))
+	for index, coefficient := range c.Coefficients {
+		coefficients[fmt.Sprint(index)] = scalarHex(coefficient)
+	}
+	evaluationPoints := make([]string, len(c.EvaluationPoints))
+	for i, point := range c.EvaluationPoints {
+		evaluationPoints[i] = scalarHex(point)
+	}
 	return map[string]any{
 		"indices":           c.Indices,
-		"coefficients":      c.Coefficients,
-		"evaluation_points": c.EvaluationPoints,
+		"coefficients":      coefficients,
+		"evaluation_points": evaluationPoints,
 		"nonce":             c.Nonce,
 	}
 }
@@ -103,7 +114,7 @@ type AuthPayload struct {
 type FileProof struct {
 	Auth   AuthPayload
 	B      GroupElement
-	YTilde uint64
+	YTilde Scalar
 	R      GroupElement
 }
 
@@ -112,7 +123,7 @@ type AuditProof struct {
 	FileProofs []FileProof
 	Cq         GroupElement
 	Cqr        GroupElement
-	VTildeQ    uint64
+	VTildeQ    Scalar
 	RQ         GroupElement
 	PiBatch    GroupElement
 }
@@ -123,10 +134,11 @@ type BatchPDPProtocol struct {
 	Field   *PrimeField
 
 	rng     *rand.Rand
-	backend *AlgebraicKZGBackend
+	backend *CurveKZGBackend
 	g       GroupElement
 }
 
+// Setup 兼容可选配置入口：为空时使用默认参数，否则按传入配置初始化协议。
 func Setup(config *ProtocolConfig) (*BatchPDPProtocol, error) {
 	cfg := DefaultProtocolConfig()
 	if config != nil {
@@ -135,6 +147,7 @@ func Setup(config *ProtocolConfig) (*BatchPDPProtocol, error) {
 	return NewBatchPDPProtocol(cfg)
 }
 
+// NewBatchPDPProtocol 初始化有限域、随机源、KZG 后端和操作计数器。
 func NewBatchPDPProtocol(config ProtocolConfig) (*BatchPDPProtocol, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -147,8 +160,10 @@ func NewBatchPDPProtocol(config ProtocolConfig) (*BatchPDPProtocol, error) {
 	}
 
 	rng := rand.New(rand.NewSource(config.RNGSeed))
-	tau := field.Random(rng, true)
-	backend := NewAlgebraicKZGBackend(field, tau, counter)
+	backend, err := NewCurveKZGBackend(field, config.SectorsPerChunk, rng, counter)
+	if err != nil {
+		return nil, err
+	}
 
 	return &BatchPDPProtocol{
 		Config:  config,
@@ -160,12 +175,13 @@ func NewBatchPDPProtocol(config ProtocolConfig) (*BatchPDPProtocol, error) {
 	}, nil
 }
 
-func (p *BatchPDPProtocol) RandomFileBatch() [][][]uint64 {
-	dataset := make([][][]uint64, p.Config.NumFiles)
+// RandomFileBatch 按当前配置生成一批随机文件数据，结构为 文件-分块-扇区。
+func (p *BatchPDPProtocol) RandomFileBatch() [][][]Scalar {
+	dataset := make([][][]Scalar, p.Config.NumFiles)
 	for i := 0; i < p.Config.NumFiles; i++ {
-		fileChunks := make([][]uint64, p.Config.ChunksPerFile)
+		fileChunks := make([][]Scalar, p.Config.ChunksPerFile)
 		for j := 0; j < p.Config.ChunksPerFile; j++ {
-			sectors := make([]uint64, p.Config.SectorsPerChunk)
+			sectors := make([]Scalar, p.Config.SectorsPerChunk)
 			for k := 0; k < p.Config.SectorsPerChunk; k++ {
 				sectors[k] = p.Field.Random(p.rng, false)
 			}
@@ -176,16 +192,19 @@ func (p *BatchPDPProtocol) RandomFileBatch() [][][]uint64 {
 	return dataset
 }
 
-func (p *BatchPDPProtocol) chunkPolynomial(sectors []uint64) Polynomial {
+// chunkPolynomial 将一个分块中的扇区值视作多项式系数。
+func (p *BatchPDPProtocol) chunkPolynomial(sectors []Scalar) Polynomial {
 	return NewPolynomial(sectors, p.Field)
 }
 
+// merkleLeaf 将文件编号、分块编号和 KZG 标签绑定成 Merkle 叶子哈希。
 func (p *BatchPDPProtocol) merkleLeaf(fileIndex, chunkIndex int, tag GroupElement) []byte {
 	return stableHashBytes(p.Counter, "tag-leaf", fileIndex, chunkIndex, tag.Serialize())
 }
 
+// aggregatePolynomial 按挑战系数线性组合被抽查分块的多项式。
 func (p *BatchPDPProtocol) aggregatePolynomial(storedFile StoredFile, challenge *Challenge) (Polynomial, error) {
-	poly := NewPolynomial([]uint64{0}, p.Field)
+	poly := NewPolynomial([]Scalar{p.Field.Zero()}, p.Field)
 	for _, j := range challenge.Indices {
 		if j < 0 || j >= len(storedFile.Polynomials) {
 			return Polynomial{}, fmt.Errorf("challenge index %d out of range", j)
@@ -199,6 +218,7 @@ func (p *BatchPDPProtocol) aggregatePolynomial(storedFile StoredFile, challenge 
 	return poly, nil
 }
 
+// aggregateTag 按挑战系数组合被抽查分块的 KZG 标签，得到聚合承诺 B_i。
 func (p *BatchPDPProtocol) aggregateTag(storedFile StoredFile, challenge *Challenge) (GroupElement, error) {
 	result := p.backend.Identity()
 	for _, j := range challenge.Indices {
@@ -214,6 +234,7 @@ func (p *BatchPDPProtocol) aggregateTag(storedFile StoredFile, challenge *Challe
 	return result, nil
 }
 
+// buildAuthPayload 为被抽查标签生成认证材料，可选择单路径证明或合并多重证明。
 func (p *BatchPDPProtocol) buildAuthPayload(storedFile StoredFile, challenge *Challenge, authMode AuthMode) (AuthPayload, error) {
 	tags := make(map[int]GroupElement, len(challenge.Indices))
 	for _, j := range challenge.Indices {
@@ -245,6 +266,7 @@ func (p *BatchPDPProtocol) buildAuthPayload(storedFile StoredFile, challenge *Ch
 	}
 }
 
+// fiatShamirAlpha 从公开 transcript 中派生每个文件对应的批聚合随机系数 alpha_i。
 func (p *BatchPDPProtocol) fiatShamirAlpha(
 	challenge *Challenge,
 	roots [][]byte,
@@ -252,11 +274,12 @@ func (p *BatchPDPProtocol) fiatShamirAlpha(
 	Cq GroupElement,
 	Cqr GroupElement,
 	fileIndex int,
-) uint64 {
+) Scalar {
 	bundle := transcriptBundle(fileProofs)
 	return hashToField(p.Field, p.Counter, "alpha", challenge.ToPublicDict(), roots, bundle, Cq, Cqr, fileIndex)
 }
 
+// fiatShamirZ 从完整批证明 transcript 中派生批量 KZG 打开点 z。
 func (p *BatchPDPProtocol) fiatShamirZ(
 	challenge *Challenge,
 	roots [][]byte,
@@ -264,12 +287,13 @@ func (p *BatchPDPProtocol) fiatShamirZ(
 	Cq GroupElement,
 	Cqr GroupElement,
 	CQ GroupElement,
-) uint64 {
+) Scalar {
 	bundle := transcriptBundle(fileProofs)
 	return hashToField(p.Field, p.Counter, "z", challenge.ToPublicDict(), roots, bundle, Cq, Cqr, CQ)
 }
 
-func (p *BatchPDPProtocol) Store(dataset [][][]uint64) (*StoredBatch, error) {
+// Store 对输入数据生成每个分块的 KZG 标签和 Merkle 根，得到后续审计所需的存储状态。
+func (p *BatchPDPProtocol) Store(dataset [][][]Scalar) (*StoredBatch, error) {
 	if len(dataset) != p.Config.NumFiles {
 		return nil, fmt.Errorf("expected %d files, got %d", p.Config.NumFiles, len(dataset))
 	}
@@ -285,13 +309,13 @@ func (p *BatchPDPProtocol) Store(dataset [][][]uint64) (*StoredBatch, error) {
 		polynomials := make([]Polynomial, 0, len(fileChunks))
 		tags := make([]GroupElement, 0, len(fileChunks))
 		leaves := make([][]byte, 0, len(fileChunks))
-		sectorsCopy := make([][]uint64, 0, len(fileChunks))
+		sectorsCopy := make([][]Scalar, 0, len(fileChunks))
 
 		for j, sectors := range fileChunks {
 			if len(sectors) != p.Config.SectorsPerChunk {
 				return nil, fmt.Errorf("file %d chunk %d: expected %d sectors, got %d", i, j, p.Config.SectorsPerChunk, len(sectors))
 			}
-			sectorCopy := make([]uint64, len(sectors))
+			sectorCopy := make([]Scalar, len(sectors))
 			for k, sector := range sectors {
 				sectorCopy[k] = p.Field.Normalize(sector)
 			}
@@ -322,17 +346,18 @@ func (p *BatchPDPProtocol) Store(dataset [][][]uint64) (*StoredBatch, error) {
 	return &StoredBatch{Files: storedFiles, Roots: roots}, nil
 }
 
+// Challenge 随机抽取分块索引、线性组合系数和每个文件的评估点。
 func (p *BatchPDPProtocol) Challenge() *Challenge {
 	perm := p.rng.Perm(p.Config.ChunksPerFile)
 	indices := append([]int(nil), perm[:p.Config.ChallengedChunks]...)
 	sort.Ints(indices)
 
-	coefficients := make(map[int]uint64, len(indices))
+	coefficients := make(map[int]Scalar, len(indices))
 	for _, j := range indices {
 		coefficients[j] = p.Field.Random(p.rng, true)
 	}
 
-	evaluationPoints := make([]uint64, p.Config.NumFiles)
+	evaluationPoints := make([]Scalar, p.Config.NumFiles)
 	for i := range evaluationPoints {
 		evaluationPoints[i] = p.Field.Random(p.rng, false)
 	}
@@ -351,6 +376,7 @@ func (p *BatchPDPProtocol) Challenge() *Challenge {
 	}
 }
 
+// ProofGen 根据存储状态和挑战生成批量 PDP 证明，包含认证路径、掩码值和批 KZG 打开证明。
 func (p *BatchPDPProtocol) ProofGen(storedBatch *StoredBatch, challenge *Challenge, authMode AuthMode) (*AuditProof, error) {
 	if err := p.validateStoredBatch(storedBatch); err != nil {
 		return nil, err
@@ -362,7 +388,6 @@ func (p *BatchPDPProtocol) ProofGen(storedBatch *StoredBatch, challenge *Challen
 	fileProofs := make([]FileProof, 0, len(storedBatch.Files))
 	fiPolys := make([]Polynomial, 0, len(storedBatch.Files))
 	wiPolys := make([]Polynomial, 0, len(storedBatch.Files))
-	var sumRiWiTau uint64
 
 	for i, storedFile := range storedBatch.Files {
 		ri := challenge.EvaluationPoints[i]
@@ -387,27 +412,26 @@ func (p *BatchPDPProtocol) ProofGen(storedBatch *StoredBatch, challenge *Challen
 		}
 
 		wi, remainder := fi.SubtractConstant(yi).DivideByLinear(ri)
-		if remainder != 0 {
+		if !remainder.IsZero() {
 			return nil, fmt.Errorf("quotient remainder non-zero for file %d", i)
 		}
-
-		wiTau := wi.Evaluate(p.backend.Tau)
-		sumRiWiTau = p.Field.Add(sumRiWiTau, p.Field.Mul(ri, wiTau))
 
 		fiPolys = append(fiPolys, fi)
 		wiPolys = append(wiPolys, wi)
 		fileProofs = append(fileProofs, FileProof{Auth: auth, B: bi, YTilde: yTildeI, R: Ri})
 	}
 
-	qPoly := NewPolynomial([]uint64{0}, p.Field)
-	for _, wi := range wiPolys {
+	qPoly := NewPolynomial([]Scalar{p.Field.Zero()}, p.Field)
+	Cqr := p.backend.Identity()
+	for i, wi := range wiPolys {
 		qPoly = qPoly.Add(wi)
+		wiCommit := p.backend.CommitPolynomial(wi)
+		Cqr = Cqr.Mul(wiCommit.Pow(challenge.EvaluationPoints[i]))
 	}
 
 	Cq := p.backend.CommitPolynomial(qPoly)
-	Cqr := p.backend.CommitScalar(sumRiWiTau)
 
-	alphas := make([]uint64, p.Config.NumFiles)
+	alphas := make([]Scalar, p.Config.NumFiles)
 	for i := 0; i < p.Config.NumFiles; i++ {
 		alphas[i] = p.fiatShamirAlpha(challenge, storedBatch.Roots, fileProofs, Cq, Cqr, i)
 	}
@@ -427,7 +451,7 @@ func (p *BatchPDPProtocol) ProofGen(storedBatch *StoredBatch, challenge *Challen
 	RQ := p.backend.CommitScalar(eta)
 
 	piPoly, remainder := QPoly.SubtractConstant(VQ).DivideByLinear(z)
-	if remainder != 0 {
+	if !remainder.IsZero() {
 		return nil, errors.New("opening quotient remainder non-zero")
 	}
 	piBatch := p.backend.CommitPolynomial(piPoly)
@@ -443,6 +467,7 @@ func (p *BatchPDPProtocol) ProofGen(storedBatch *StoredBatch, challenge *Challen
 	}, nil
 }
 
+// verifyAuth 验证单个文件的标签认证路径，并重新计算聚合标签是否与证明中的 B_i 一致。
 func (p *BatchPDPProtocol) verifyAuth(fileIndex int, root []byte, fileProof FileProof, challenge *Challenge, authMode AuthMode) bool {
 	leafHashes := make(map[int][]byte, len(challenge.Indices))
 	for _, j := range challenge.Indices {
@@ -487,9 +512,10 @@ func (p *BatchPDPProtocol) verifyAuth(fileIndex int, root []byte, fileProof File
 		}
 		bHat = bHat.Mul(tag.Pow(coefficient))
 	}
-	return bHat.Exponent == fileProof.B.Exponent
+	return bHat.Equal(fileProof.B)
 }
 
+// Verify 检查完整审计证明：先验证 Merkle 认证，再验证两个 KZG 配对关系。
 func (p *BatchPDPProtocol) Verify(storedBatch *StoredBatch, challenge *Challenge, proof *AuditProof) bool {
 	if p.validateStoredBatch(storedBatch) != nil || p.validateChallenge(challenge) != nil || proof == nil {
 		return false
@@ -510,11 +536,11 @@ func (p *BatchPDPProtocol) Verify(storedBatch *StoredBatch, challenge *Challenge
 		A = A.Mul(term)
 	}
 
-	if p.backend.Pairing(A.Mul(proof.Cqr), 1) != p.backend.Pairing(proof.Cq, p.backend.Tau) {
+	if !p.backend.PairingEqual(A.Mul(proof.Cqr), p.backend.G2Generator(), proof.Cq, p.backend.TauG2()) {
 		return false
 	}
 
-	alphas := make([]uint64, p.Config.NumFiles)
+	alphas := make([]Scalar, p.Config.NumFiles)
 	for i := 0; i < p.Config.NumFiles; i++ {
 		alphas[i] = p.fiatShamirAlpha(challenge, storedBatch.Roots, proof.FileProofs, proof.Cq, proof.Cqr, i)
 	}
@@ -530,15 +556,16 @@ func (p *BatchPDPProtocol) Verify(storedBatch *StoredBatch, challenge *Challenge
 		Mul(p.g.Pow(p.Field.Neg(proof.VTildeQ))).
 		Mul(proof.PiBatch.Pow(z))
 
-	return p.backend.Pairing(lhs, 1) == p.backend.Pairing(proof.PiBatch, p.backend.Tau)
+	return p.backend.PairingEqual(lhs, p.backend.G2Generator(), proof.PiBatch, p.backend.TauG2())
 }
 
+// CloneStoredBatch 深拷贝可变数据字段，方便测试篡改场景而不破坏原始存储状态。
 func (p *BatchPDPProtocol) CloneStoredBatch(storedBatch *StoredBatch) *StoredBatch {
 	clonedFiles := make([]StoredFile, len(storedBatch.Files))
 	for i, storedFile := range storedBatch.Files {
-		sectors := make([][]uint64, len(storedFile.Sectors))
+		sectors := make([][]Scalar, len(storedFile.Sectors))
 		for j, chunk := range storedFile.Sectors {
-			sectors[j] = append([]uint64(nil), chunk...)
+			sectors[j] = append([]Scalar(nil), chunk...)
 		}
 
 		polynomials := make([]Polynomial, len(storedFile.Polynomials))
@@ -562,6 +589,7 @@ func (p *BatchPDPProtocol) CloneStoredBatch(storedBatch *StoredBatch) *StoredBat
 	return &StoredBatch{Files: clonedFiles, Roots: roots}
 }
 
+// TamperChallengedSector 修改第一个被挑战分块的一个扇区，用于构造应被拒绝的反例。
 func (p *BatchPDPProtocol) TamperChallengedSector(storedBatch *StoredBatch, challenge *Challenge) error {
 	if len(challenge.Indices) == 0 {
 		return errors.New("challenge has no indices")
@@ -574,7 +602,7 @@ func (p *BatchPDPProtocol) TamperChallengedSector(storedBatch *StoredBatch, chal
 	if j < 0 || j >= len(storedBatch.Files[0].Sectors) || len(storedBatch.Files[0].Sectors[j]) == 0 {
 		return fmt.Errorf("challenge index %d out of range", j)
 	}
-	storedBatch.Files[0].Sectors[j][0] = p.Field.Add(storedBatch.Files[0].Sectors[j][0], 1)
+	storedBatch.Files[0].Sectors[j][0] = p.Field.Add(storedBatch.Files[0].Sectors[j][0], p.Field.One())
 	storedBatch.Files[0].Polynomials[j] = p.chunkPolynomial(storedBatch.Files[0].Sectors[j])
 	return nil
 }
@@ -585,6 +613,7 @@ type RoundResult struct {
 	Ops      map[string]map[string]int64
 }
 
+// MeasureRound 执行一次证明生成和验证，并分别记录耗时与操作计数差值。
 func (p *BatchPDPProtocol) MeasureRound(storedBatch *StoredBatch, challenge *Challenge, authMode AuthMode) (*RoundResult, error) {
 	before := p.Counter.Snapshot()
 	startProof := time.Now()
@@ -616,6 +645,7 @@ func (p *BatchPDPProtocol) MeasureRound(storedBatch *StoredBatch, challenge *Cha
 	}, nil
 }
 
+// SizeReport 估算存储、挑战和证明的字节规模，并统计认证证明携带的哈希节点数量。
 func (p *BatchPDPProtocol) SizeReport(challenge *Challenge, proof *AuditProof) map[string]int {
 	indexBytes := max(1, int(math.Ceil(math.Log2(float64(p.Config.ChunksPerFile))/8)))
 	challengeBytes := len(challenge.Indices)*indexBytes +
@@ -652,13 +682,14 @@ func (p *BatchPDPProtocol) SizeReport(challenge *Challenge, proof *AuditProof) m
 	}
 }
 
+// ConfigDict 返回适合写入 JSON 的协议配置摘要。
 func (p *BatchPDPProtocol) ConfigDict() map[string]any {
 	return map[string]any{
 		"num_files":         p.Config.NumFiles,
 		"chunks_per_file":   p.Config.ChunksPerFile,
 		"sectors_per_chunk": p.Config.SectorsPerChunk,
 		"challenged_chunks": p.Config.ChallengedChunks,
-		"prime_modulus":     p.Config.PrimeModulus,
+		"prime_modulus":     p.Field.Modulus.String(),
 		"field_bytes":       p.Config.FieldBytes,
 		"group_bytes":       p.Config.GroupBytes,
 		"hash_bytes":        p.Config.HashBytes,
@@ -666,6 +697,7 @@ func (p *BatchPDPProtocol) ConfigDict() map[string]any {
 	}
 }
 
+// validateStoredBatch 检查存储状态是否与当前协议配置匹配。
 func (p *BatchPDPProtocol) validateStoredBatch(storedBatch *StoredBatch) error {
 	if storedBatch == nil {
 		return errors.New("stored batch is nil")
@@ -687,6 +719,7 @@ func (p *BatchPDPProtocol) validateStoredBatch(storedBatch *StoredBatch) error {
 	return nil
 }
 
+// validateChallenge 检查挑战索引、系数和评估点是否完整且无重复。
 func (p *BatchPDPProtocol) validateChallenge(challenge *Challenge) error {
 	if challenge == nil {
 		return errors.New("challenge is nil")
@@ -715,14 +748,15 @@ func (p *BatchPDPProtocol) validateChallenge(challenge *Challenge) error {
 
 type fileTranscript struct {
 	B      GroupElement `json:"b"`
-	YTilde uint64       `json:"y_tilde"`
+	YTilde string       `json:"y_tilde"`
 	R      GroupElement `json:"R"`
 }
 
+// transcriptBundle 抽取 Fiat-Shamir 所需的证明公开字段，避免把认证路径等大对象纳入哈希。
 func transcriptBundle(fileProofs []FileProof) []fileTranscript {
 	bundle := make([]fileTranscript, len(fileProofs))
 	for i, proof := range fileProofs {
-		bundle[i] = fileTranscript{B: proof.B, YTilde: proof.YTilde, R: proof.R}
+		bundle[i] = fileTranscript{B: proof.B, YTilde: scalarHex(proof.YTilde), R: proof.R}
 	}
 	return bundle
 }

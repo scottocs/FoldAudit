@@ -12,7 +12,7 @@ authentication is required for the active workflow.
 
 ## Repository Layout
 
-- [crypto/pdpbatch](crypto/pdpbatch): Go implementation of the batch PDP protocol, including the algebraic KZG simulator, Merkle authentication, proof generation, and verification.
+- [crypto/pdpbatch](crypto/pdpbatch): Go implementation of the batch PDP protocol, including BLS12-381 KZG commitments, Merkle authentication, proof generation, and verification.
 - [cmd/offchain-bench](cmd/offchain-bench): off-chain correctness and timing benchmark runner.
 - [crypto/kzg](crypto/kzg): real EIP-4844 KZG sample code, kept for standalone KZG experiments.
 - [legacy](legacy): archived Python prototype and its previous benchmark outputs.
@@ -25,7 +25,7 @@ The active PDP flow is:
 1. `BatchPDPProtocol.Store`: encode chunks, commit tags, and build Merkle roots.
 2. `BatchPDPProtocol.Challenge`: third-party verifier samples audit indices, coefficients, and evaluation points.
 3. `BatchPDPProtocol.ProofGen`: cloud server generates an audit proof.
-4. `BatchPDPProtocol.Verify`: third-party verifier checks Merkle authentication and algebraic proof equations locally.
+4. `BatchPDPProtocol.Verify`: third-party verifier checks Merkle authentication and BLS12-381 pairing equations locally.
 
 ## Local Verification
 
@@ -67,9 +67,9 @@ The main timing columns are:
 
 ## Current Cryptographic Scope
 
-The active batch PDP implementation uses the algebraic KZG simulator ported
-from the Python prototype. It preserves the protocol equations and benchmark
-shape, but it is not a production BLS12-381 implementation.
+The active batch PDP implementation now uses `gnark-crypto`'s BLS12-381
+G1/G2 groups, scalar field arithmetic, SRS-based KZG commitments, and pairing
+checks. The benchmark remains fully off-chain.
 
 The older Sepolia contract path remains in the repository for reference only
 while blockchain authentication is out of scope.

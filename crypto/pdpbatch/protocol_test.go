@@ -2,6 +2,7 @@ package pdpbatch
 
 import "testing"
 
+// TestHonestRoundAcceptsForSingleAndMultiProofs 确认诚实数据在单路径和多重证明模式下都能通过验证。
 func TestHonestRoundAcceptsForSingleAndMultiProofs(t *testing.T) {
 	config := DefaultProtocolConfig()
 	config.NumFiles = 3
@@ -33,6 +34,7 @@ func TestHonestRoundAcceptsForSingleAndMultiProofs(t *testing.T) {
 	}
 }
 
+// TestTamperedChallengedDataIsDetected 确认被挑战数据遭篡改后会被验证流程拒绝。
 func TestTamperedChallengedDataIsDetected(t *testing.T) {
 	config := DefaultProtocolConfig()
 	config.NumFiles = 2
@@ -66,6 +68,7 @@ func TestTamperedChallengedDataIsDetected(t *testing.T) {
 	}
 }
 
+// TestMultiProofUsesFewerOrEqualHashNodesThanSinglePaths 比较多重证明和单路径证明携带的哈希节点数量。
 func TestMultiProofUsesFewerOrEqualHashNodesThanSinglePaths(t *testing.T) {
 	config := DefaultProtocolConfig()
 	config.NumFiles = 2

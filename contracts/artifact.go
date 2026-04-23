@@ -21,6 +21,7 @@ type Artifact struct {
 	SolcVersion      string          `json:"solcVersion"`
 }
 
+// Load 读取内嵌的合约 artifact，解析 ABI，并返回可部署的合约字节码。
 func Load() (*Artifact, abi.ABI, []byte, error) {
 	var artifact Artifact
 	if err := json.Unmarshal(artifactBytes, &artifact); err != nil {

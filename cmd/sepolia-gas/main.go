@@ -84,6 +84,7 @@ type runResult struct {
 	Calls             []callResult     `json:"calls"`
 }
 
+// main 在 Sepolia 上执行 KZG 点验证合约的部署、调用、估算与可选交易发送，并输出 gas 统计结果。
 func main() {
 	cfg := cliConfig{}
 	flag.StringVar(&cfg.RPCURL, "rpc", envFirst("SEPOLIA_RPC_URL", "RPC_URL"), "Sepolia RPC URL")
@@ -273,6 +274,7 @@ func main() {
 	fmt.Println(string(pretty))
 }
 
+// ensureContract 根据命令行参数和私钥情况，选择复用现有合约、状态覆盖模拟合约，或真实部署新合约。
 func ensureContract(
 	ctx context.Context,
 	client *ethclient.Client,
@@ -334,6 +336,7 @@ func ensureContract(
 	}, false, nil
 }
 
+// sendVerificationTx 向验证合约发送一次真实交易，并返回交易哈希、gas 使用量和费用信息。
 func sendVerificationTx(
 	ctx context.Context,
 	client *ethclient.Client,
@@ -370,6 +373,7 @@ func sendVerificationTx(
 	return tx.Hash(), receipt.GasUsed, receipt.BlockNumber.Uint64(), receipt.EffectiveGasPrice, txFeeWei, nil
 }
 
+// newTransactor 基于私钥和当前链信息创建 EIP-1559 交易发送器。
 func newTransactor(ctx context.Context, client *ethclient.Client, privateKey *ecdsa.PrivateKey) (*bind.TransactOpts, error) {
 	chainID, err := client.ChainID(ctx)
 	if err != nil {
@@ -394,6 +398,7 @@ func newTransactor(ctx context.Context, client *ethclient.Client, privateKey *ec
 	return auth, nil
 }
 
+// decodeReturn 将合约 verify 方法的 ABI 返回值转换为 Go 中的布尔值和大整数。
 func decodeReturn(values []interface{}) (bool, *big.Int, *big.Int) {
 	ok := values[0].(bool)
 	fieldElements := values[1].(*big.Int)
@@ -401,6 +406,7 @@ func decodeReturn(values []interface{}) (bool, *big.Int, *big.Int) {
 	return ok, fieldElements, modulus
 }
 
+// parsePrivateKey 清理并校验十六进制私钥字符串，再转换为 ECDSA 私钥对象。
 func parsePrivateKey(input string) (*ecdsa.PrivateKey, error) {
 	clean := strings.TrimPrefix(strings.TrimSpace(input), "0x")
 	if _, err := hex.DecodeString(clean); err != nil {
@@ -409,6 +415,7 @@ func parsePrivateKey(input string) (*ecdsa.PrivateKey, error) {
 	return ethcrypto.HexToECDSA(clean)
 }
 
+// envFirst 按顺序读取环境变量，返回第一个非空值。
 func envFirst(keys ...string) string {
 	for _, key := range keys {
 		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
@@ -418,6 +425,7 @@ func envFirst(keys ...string) string {
 	return ""
 }
 
+// defaultOutputPath 返回仓库 results 目录下的默认 Sepolia gas 结果文件路径。
 func defaultOutputPath() string {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -428,6 +436,7 @@ func defaultOutputPath() string {
 	return filepath.Join(moduleRoot, "results", "sepolia_kzg_gas.json")
 }
 
+// writeJSON 以缩进 JSON 格式写出结果，并在需要时创建父目录。
 func writeJSON(path string, value any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -439,6 +448,7 @@ func writeJSON(path string, value any) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
+// callWithOverride 使用 eth_call 的 state override，把运行时字节码临时挂到模拟地址上执行调用。
 func callWithOverride(ctx context.Context, rpcClient *rpc.Client, callMsg ethereum.CallMsg, deployedBytecode string) ([]byte, error) {
 	var raw string
 	callArg := map[string]any{
@@ -457,6 +467,7 @@ func callWithOverride(ctx context.Context, rpcClient *rpc.Client, callMsg ethere
 	return hexutil.Decode(raw)
 }
 
+// estimateGasWithOverride 使用 state override 估算未真实部署合约时的调用 gas。
 func estimateGasWithOverride(ctx context.Context, rpcClient *rpc.Client, callMsg ethereum.CallMsg, deployedBytecode string) (uint64, error) {
 	var gas hexutil.Uint64
 	callArg := map[string]any{

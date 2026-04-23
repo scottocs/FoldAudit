@@ -55,6 +55,7 @@ type runResult struct {
 	Notes        []string          `json:"notes"`
 }
 
+// main 组织离线 PDP 基准测试：先跑正确性演示，再输出 JSON 汇总和 CSV 明细。
 func main() {
 	quick := flag.Bool("quick", true, "run the smaller off-chain benchmark sweep; use --quick=false for the larger sweep")
 	repeats := flag.Int("repeats", 3, "benchmark repeats per configuration")
@@ -94,7 +95,7 @@ func main() {
 		Notes: []string{
 			"All protocol work is executed off-chain.",
 			"verify_ms is the third-party verifier's local verification time averaged over timing_rounds per repeat.",
-			"The KZG backend in crypto/pdpbatch is the algebraic simulator ported from the Python prototype.",
+			"The KZG backend in crypto/pdpbatch uses gnark-crypto BLS12-381 G1/G2 groups and pairing checks.",
 		},
 	}
 	if err := writeJSON(*outPath, result); err != nil {
@@ -105,6 +106,7 @@ func main() {
 	fmt.Println(string(pretty))
 }
 
+// runCorrectnessDemo 生成一轮诚实证明和一轮篡改证明，用于确认协议能接受诚实数据并拒绝被改动的数据。
 func runCorrectnessDemo() (correctnessResult, error) {
 	protocol, err := pdpbatch.NewBatchPDPProtocol(pdpbatch.DefaultProtocolConfig())
 	if err != nil {
@@ -140,6 +142,7 @@ func runCorrectnessDemo() (correctnessResult, error) {
 	}, nil
 }
 
+// runBenchmarkSuite 遍历不同规模和认证模式，收集存储、证明生成、验证耗时以及证明大小等指标。
 func runBenchmarkSuite(quick bool, repeats int, timingRounds int) ([]benchmarkRow, error) {
 	rows := make([]benchmarkRow, 0)
 	for _, config := range sweepConfigs(quick) {
@@ -250,6 +253,7 @@ func runBenchmarkSuite(quick bool, repeats int, timingRounds int) ([]benchmarkRo
 	return rows, nil
 }
 
+// sweepConfigs 根据 quick 参数返回一组协议规模配置，用于控制基准测试覆盖范围。
 func sweepConfigs(quick bool) []pdpbatch.ProtocolConfig {
 	configs := []pdpbatch.ProtocolConfig{}
 	add := func(numFiles, chunksPerFile, sectorsPerChunk, challengedChunks int, seed int64) {
@@ -276,6 +280,7 @@ func sweepConfigs(quick bool) []pdpbatch.ProtocolConfig {
 	return configs
 }
 
+// writeCSV 将每组基准测试结果写入 CSV，便于后续用表格或脚本分析。
 func writeCSV(path string, rows []benchmarkRow) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -338,6 +343,7 @@ func writeCSV(path string, rows []benchmarkRow) error {
 	return writer.Error()
 }
 
+// writeJSON 以缩进 JSON 的形式写出汇总结果，并自动创建目标目录。
 func writeJSON(path string, value any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -349,6 +355,7 @@ func writeJSON(path string, value any) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
+// measureAverage 重复执行目标函数并返回单次平均耗时，单位为毫秒。
 func measureAverage(rounds int, fn func() error) (float64, error) {
 	start := time.Now()
 	for i := 0; i < rounds; i++ {
@@ -360,6 +367,7 @@ func measureAverage(rounds int, fn func() error) (float64, error) {
 	return roundFloat(elapsedMS/float64(rounds), 6), nil
 }
 
+// mean 计算浮点数组的平均值，并按指定小数位做四舍五入。
 func mean(values []float64, decimals int) float64 {
 	var total float64
 	for _, value := range values {
@@ -368,15 +376,18 @@ func mean(values []float64, decimals int) float64 {
 	return roundFloat(total/float64(len(values)), decimals)
 }
 
+// roundFloat 将浮点数四舍五入到指定小数位。
 func roundFloat(value float64, decimals int) float64 {
 	scale := math.Pow10(decimals)
 	return math.Round(value*scale) / scale
 }
 
+// formatFloat 将浮点数格式化为无多余尾零的十进制字符串。
 func formatFloat(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
+// repoPath 基于当前命令源码位置拼出仓库根目录下的路径，避免运行目录变化影响输出位置。
 func repoPath(parts ...string) string {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {

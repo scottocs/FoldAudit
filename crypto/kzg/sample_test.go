@@ -2,6 +2,7 @@ package kzg
 
 import "testing"
 
+// TestSampleBuildsAndVerifies 确认测试样本能够生成并通过本地 KZG 校验。
 func TestSampleBuildsAndVerifies(t *testing.T) {
 	sample, err := NewSample(1)
 	if err != nil {
