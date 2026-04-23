@@ -1,10 +1,16 @@
 # Results
 
-This folder is reserved for Sepolia gas-test outputs from the Go implementation.
+This folder stores current off-chain benchmark outputs from the Go
+implementation.
 
-Expected output file:
+Current expected files:
 
-- `sepolia_kzg_gas.json`
+- `offchain_benchmark_summary.json`
+- `offchain_benchmark_results.csv`
 
-Legacy Python benchmark outputs were moved to
+The current benchmark assumes a third-party verifier performs all verification
+locally. Sepolia gas outputs, if present, are historical artifacts from the
+earlier on-chain experiment path.
+
+Legacy Python benchmark outputs remain under
 `legacy/python_prototype/results/`.

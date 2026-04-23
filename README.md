@@ -1,29 +1,33 @@
-# PDP26 Sepolia KZG Gas Test
+# PDP26 Off-chain Batch PDP Verification
 
-This repository is organized by responsibility:
+This repository now treats verification as an off-chain workflow with three
+parties:
 
-- [contracts](</c:/Users/62692/Documents/PDP26/code/contracts>): Solidity source, compiled artifact, contract helper code, and contract build script
-- [crypto](</c:/Users/62692/Documents/PDP26/code/crypto>): cryptographic implementations only, currently the real EIP-4844 KZG code
-- [cmd](</c:/Users/62692/Documents/PDP26/code/cmd>): executable entrypoints
-- [legacy](</c:/Users/62692/Documents/PDP26/code/legacy>): archived Python prototype from the earlier exploration stage
+- Data Owner: prepares files, chunks, tags, and Merkle roots.
+- Cloud Server: stores the tagged data and generates audit proofs.
+- Third-party Verifier: samples challenges and verifies proofs locally.
 
-The active code path for Sepolia gas testing is:
+No blockchain transaction, contract deployment, gas estimate, or on-chain
+authentication is required for the active workflow.
 
-- [contracts/KZGPointEvaluationWrapper.sol](</c:/Users/62692/Documents/PDP26/code/contracts/KZGPointEvaluationWrapper.sol>)
-- [contracts/KZGPointEvaluationWrapper.json](</c:/Users/62692/Documents/PDP26/code/contracts/KZGPointEvaluationWrapper.json>)
-- [contracts/artifact.go](</c:/Users/62692/Documents/PDP26/code/contracts/artifact.go>)
-- [crypto/kzg/sample.go](</c:/Users/62692/Documents/PDP26/code/crypto/kzg/sample.go>)
-- [cmd/sepolia-gas/main.go](</c:/Users/62692/Documents/PDP26/code/cmd/sepolia-gas/main.go>)
+## Repository Layout
 
-## What is real here
+- [crypto/pdpbatch](crypto/pdpbatch): Go implementation of the batch PDP protocol, including the algebraic KZG simulator, Merkle authentication, proof generation, and verification.
+- [cmd/offchain-bench](cmd/offchain-bench): off-chain correctness and timing benchmark runner.
+- [crypto/kzg](crypto/kzg): real EIP-4844 KZG sample code, kept for standalone KZG experiments.
+- [legacy](legacy): archived Python prototype and its previous benchmark outputs.
+- [contracts](contracts) and [cmd/sepolia-gas](cmd/sepolia-gas): historical Sepolia/on-chain experiment code, not part of the current active path.
 
-This version uses Ethereum's real EIP-4844 KZG stack:
+## Active Off-chain Path
 
-- off-chain proof generation: `github.com/ethereum/go-ethereum/crypto/kzg4844`
-- real curve: BLS12-381
-- on-chain verification path: the Sepolia point-evaluation precompile at `0x0A`
+The active PDP flow is:
 
-## Local verification
+1. `BatchPDPProtocol.Store`: encode chunks, commit tags, and build Merkle roots.
+2. `BatchPDPProtocol.Challenge`: third-party verifier samples audit indices, coefficients, and evaluation points.
+3. `BatchPDPProtocol.ProofGen`: cloud server generates an audit proof.
+4. `BatchPDPProtocol.Verify`: third-party verifier checks Merkle authentication and algebraic proof equations locally.
+
+## Local Verification
 
 From the repository root:
 
@@ -32,34 +36,40 @@ go test ./...
 go build ./...
 ```
 
-## Sepolia run
+## Off-chain Benchmark
 
-The CLI needs:
-
-- a Sepolia RPC URL
-- a funded Sepolia private key if you want actual transactions and receipt `gasUsed`
-
-Example:
+Run the default quick sweep:
 
 ```powershell
-$env:SEPOLIA_RPC_URL="https://your-sepolia-rpc"
-$env:SEPOLIA_PRIVATE_KEY="0x..."
-go run ./cmd/sepolia-gas --samples 3
+go run ./cmd/offchain-bench --quick --repeats 3
 ```
 
-If you already deployed the wrapper contract, you can reuse it:
+Run the larger sweep:
 
 ```powershell
-go run ./cmd/sepolia-gas --rpc https://your-sepolia-rpc --contract 0xYourWrapperAddress
+go run ./cmd/offchain-bench --quick=false --repeats 3
 ```
 
-The default result file is
-[results/sepolia_kzg_gas.json](</c:/Users/62692/Documents/PDP26/code/results/sepolia_kzg_gas.json>).
+Use `--timing-rounds` to control the inner averaging loop for fast local
+operations. The default is `50`, so each repeat averages 50 local proof
+generations and 50 local verifications.
 
-## Rebuild Contract Artifact
+Default outputs:
 
-If you change the Solidity source, regenerate the artifact with:
+- [results/offchain_benchmark_summary.json](results/offchain_benchmark_summary.json)
+- [results/offchain_benchmark_results.csv](results/offchain_benchmark_results.csv)
 
-```powershell
-python contracts\compile_contract.py
-```
+The main timing columns are:
+
+- `avg_store_ms`: data-owner storage/tagging/Merkle setup time.
+- `avg_proofgen_ms`: cloud-server proof generation time.
+- `avg_verify_ms`: third-party verifier local verification time.
+
+## Current Cryptographic Scope
+
+The active batch PDP implementation uses the algebraic KZG simulator ported
+from the Python prototype. It preserves the protocol equations and benchmark
+shape, but it is not a production BLS12-381 implementation.
+
+The older Sepolia contract path remains in the repository for reference only
+while blockchain authentication is out of scope.
