@@ -1,0 +1,598 @@
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                1
+
+
+
+
+        Efficient Provable Data Possession with Batch
+               Verification Across Multiple Files
+
+  Abstract—                                                              Table I: Summary of Notation and System Parameters
+  Index Terms—Polynomial Commitment, Vector Commitment,              Symbol Description
+Data Management                                                      λ          Security parameter.
+                                                                     p          Prime order of the finite field Fp and bilinear groups.
+                                                                     [m]        Index set {1, 2, . . . , m}.
+                       I. I NTRODUCTION                              F<d
+                                                                       p [X] Vector space of univariate polynomials over Fp with degree strictly
+                                                                                less than d.
+      a) Unified Challenge Design via Dual-Purpose ri .:             g, h       Public generators of G1 and G2 , respectively.
+A salient innovation of our construction lies in the dual-           τ          Secret trapdoor used for Structured Reference String (SRS) gener-
+purpose utilization of the per-file challenge point ri . Unlike                 ation.
+                                                                                                                        s−1
+conventional batch verification schemes that require disjoint        SRS        Public parameters (g, g τ , . . . , g τ     , h, hτ ) supporting degrees <
+                                                                                s.
+random values for polynomial evaluation and linear aggrega-          H1         Hash function for Merkle Tree construction.
+tion, our protocol ingeniously unifies these roles by employing      H2         Fiat-Shamir random oracle hash functions.
+ri simultaneously as the evaluation point for the per-file           m, n, s, c Number of files, chunks per file, sectors per chunk, and challenged
+                                                                                chunks per file.
+quotient polynomial gi (X) = (fi (X) − yi )/(X − ri ) and            i, j, k    Indices for files (i ∈ [m]), chunks (j ∈ [n]), and sectors (0 ≤ k <
+as the batching coefficient
+                    Pm         in the cross-file quotient com-                  s).
+mitment Cqr = g i=1 ri gi (τ ) . This unified challenge design       mi,j,k k-th sector value of chunk j in file i.
+                                                                     fi,j (X) Polynomial       encoding of chunk j in file i: fi,j (X) =
+eliminates the overhead of sampling and transmitting auxiliary                  Ps−1               k
+                                                                                    k=0 mi,j,k X .
+aggregation scalars, directly reducing the challenge payload         σi,j       KZG commitment (homomorphic tag) for fi,j (X): σi,j =
+and streamlining the Fiat-Shamir transcript construction. More                  g fi,j (τ ) .
+                                                                     Li,j       Leaf node of Merkel tree: Li,j = H1 (i∥j∥σi,j ).
+importantly, it induces a precise algebraic cancellation in          Γi         Root hash of the Merkle tree for file i.
+                                                     ?
+the quotient-consistency equation e(A · Cqr , h) = e(Cq , hτ ),      J          Challenged index set, J ⊆ [n] with |J| = c.
+which compresses m independent quotient checks into a single         vj         Short for vi,j , random coefficient for challenged chunk j of file i.
+                                                                     ri         Random evaluation point for file i.
+constant-size pairing verification. Despite this structural reuse,                                                                   P
+                                                                     fi (X) Aggregated polynomial for file i: fi (X) = j∈J vj fi,j (X).
+cryptographic soundness is rigorously maintained: since ri is        yi         Evaluation of aggregated polynomial: yi = fi (ri ).
+                                                                                                                                v
+                                                                                Aggregated tag for file i: bi = j∈J σi,jj = g fi (τ ) .
+                                                                                                                      Q
+uniformly sampled by the verifier (or derived via Fiat-Shamir)       bi
+after the homomorphic tags are irrevocably fixed, it func-           wi (X) Per-file quotient polynomial: wi (X) = (fiP             (X) − yi )/(X − ri ).
+                                                                     q(X)       Aggregated quotient polynomial: q(X) = m              i=1  wi (X).
+tions as a fresh, unpredictable random challenge that thwarts                                                                           Pm
+                                                                     Cq , Cqr Quotient commitments: Cq = g q(τ ) , Cqr = g i=1 ri wi (τ ) .
+adaptive quotient forgery under the Schwartz-Zippel lemma.           αi         Fiat-Shamir derived folding coefficient P      for file i.
+Consequently, our approach achieves optimal challenge effi-          Q(X) Folded polynomial: Q(X) = q(X)                   + m    i=1 αi fi (X).
+                                                                                                                         Qm       α
+                                                                     CQ         Folded commitment: CQ = Cq · i=1 bi i .
+ciency and transcript compactness without compromising the           z          Random evaluation point for folded opening (Fiat-Shamir derived).
+knowledge soundness of the underlying KZG commitments,               VQ         Folded evaluation: VQ = Q(z).
+marking a distinct advancement over prior multi-file PDP             µi , η     Fresh additive masking scalars for per-file and global privacy.
+frameworks that rely on disjoint challenge spaces for eval-          ỹi , ṼQ Masked evaluations: ỹi = yi + µi , ṼQ = VQ + η.
+                                                                     Ri , RQ Masking commitments: Ri = g µi , RQ = g η .
+uation and aggregation.                                              πbatch     Batch opening proof: g (Q(τ )−VQ )/(τ −z) .
+                                                                     chal       Challenge tuple (J, {vj }j∈J , {ri }m     i=1 ).
+                                                                     π          Complete audit proof.
+                       II. P RELIMINARIES
+A. Notations
+  For clarity and reference, we summarize the primary math-
+ematical symbols, cryptographic parameters, and protocol-
+specific variables used throughout the paper in Table I.                  a) Quotient Polynomial: Given a polynomial f (X) ∈
+                                                                     F<d
+                                                                       p [X] and an evaluation point z ∈ Fp , the quotient poly-
+                                                                     nomial with respect to z is defined as w(X) := f (X)−y    X−z .
+B. Basics of Polynomials                                             Whenever f (z) = y for some y ∈ Fp , the numerator
+   Let Fp denote a finite field of prime order p, where p is de-     vanishes at X = z, ensuring that w(X) is a well-defined
+termined by a security parameter λ. For a positive integer d, let    polynomial in F<d−1p     [X]. Given polynomial f (x), quotient
+F<d
+  p [X] denote the vector space of univariate polynomials over       polynomial w(x) and a fixed evaluation point τ , we have
+Fp with degree strictly less than d. Polynomial indeterminates       (τ − z) · w(τ ) = f (τ ) − y Rearranging the equation yields
+are denoted by uppercase letters (e.g., X), while field elements     τ · w(τ ) = f (τ ) − y + z · w(τ ). When considering aggregating
+and coefficients use lowercase letters (e.g., x, z, r ∈ Fp ).        multiple polynomials {fi } and {wi }, the protocol sums all
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                            2
+
+
+
+equations over i ∈ [m] as:                                           E. Merkle Tree
+         m            m                   m
+         X            X                 X                              A Merkle tree is a binary hash-based commitment structure
+       τ    wi (τ ) =      fi (τ ) − yi +   zi · wi (τ ).     (1)    that provides authenticated membership proofs for a set of
+         i=1            i=1                   i=1
+                                                                     values. Let H1 : {0, 1}∗ → {0, 1}λ be a collision-resistant
+      b) Schwartz-Zippel Lemma: The Schwartz-Zippel lemma            cryptographic hash function. For a sequence of n data items
+is a fundamental probabilistic tool for bounding the likelihood      {dj }nj=1 , the leaves are constructed as indexed hashes: Lj :=
+that a non-zero polynomial evaluates to zero at a randomly           H1 (j ∥ dj ), j ∈ [n]. Internal nodes are recursively computed as
+chosen point. It serves as the mathematical cornerstone for          Nk = H1 (N2k ∥ N2k+1 ) until a single root hash R is obtained.
+the soundness guarantees of polynomial commitment schemes            The root R uniquely commits to the entire dataset under the
+and probabilistic proof systems.                                     collision resistance of H1 .
+Lemma 1 (Schwartz-Zippel Lemma [?], [?]). Let F be a field,             To prove that a value dj belongs to the committed set, the
+and let P (X) ∈ F[X] be a non-zero polynomial of degree              prover provides an authentication path consisting of the sibling
+d ≥ 0. Let S ⊆ F be a finite subset. If r is chosen uniformly        hashes along the route from leaf Lj to the root. The verifier
+at random from S, then                                               recomputes the root from the path and checks equality with
+                                       d                             the trusted root R.
+                   Pr [P (r) = 0] ≤       .
+                  r←S                 |S|
+                                                                            III. S YSTEM M ODEL AND S ECURITY M ODEL
+C. KZG Polynomial Commitment
+                                                                     A. System Model
+  We employ a KZG-type polynomial commitment scheme
+over a bilinear group tuple (G1 , G2 , GT , e) of prime order p.           a) System Entities: We consider a batch-verifiable Prov-
+Here, e : G1 × G2 → GT is an efficiently computable, non-            able Data Possession (PDP) architecture comprising three
+degenerate bilinear map. Let g ∈ G1 and h ∈ G2 be publicly           entities: Data Owner, a Cloud Server and Verifier.
+known generators.                                                      • Data Owner (DO): The DO outsources a batch of m files
+  A trusted setup generates a secret trapdoor τ ∈ Fp and                   to the CS for long-term storage. To ensure data integrity
+publishes a structured reference string (SRS) supporting poly-             without maintaining local copies, the DO delegates peri-
+nomials up to degree s − 1:                                                odic auditing to the V.
+                                                                       • Cloud Server (CS): The CS is modeled as untrusted
+                              2            s−1
+                                                    
+            SRS = g, g τ , g τ , . . . , g τ , h, hτ .
+                                                                           and computationally bounded: it may delete, corrupt, or
+                                 Ps−1
+For a polynomial f (X) =                        k
+                                                   ∈ F<s                   selectively withhold files or chunks to save storage or
+                                      k=0 ak X         p [X], its
+commitment is computed in the exponent as                                  bandwidth.
+                               s−1                                     • Verifier (V): The V is honest-but-curious. It executes
+                               Y  k ak
+              Cf := g f (τ ) =        gτ        ∈ G1 .                     the auditing protocol faithfully but may attempt to infer
+                                k=0
+                                                                           sensitive information from audit transcripts.
+  To prove an evaluation f (z) = v, the prover computes the                b) File Representation: A file is divided into multiple
+quotient commitment π := g w(τ ) where w(X) = (f (X) −               chunks, and each chunk can be represented through polyno-
+v)/(X − z). The verifier checks the pairing equation                 mial coefficients. Each coefficient is referred to as a sector.
+                             ?                                      Let m denote the number of files in a single audit batch, n the
+             e Cf · g −v , h = e π, hτ −z ,
+                                           
+                                                                     number of chunks per file, s the number of sectors per chunk.
+which holds if and only if f (τ ) − v = (τ − z)w(τ ) and w(X)        Namely, each chunk is parsed into s field elements from Fp
+is the quotient polynomial. Under the q-SDH assumption [],           and algebraically encoded as a polynomial of degree at most
+the scheme is evaluation-binding and knowledge-sound.                s − 1:
+                                                                                           s−1
+                                                                                           X
+D. Homomorphic Hash Function                                                  fi,j (X) =         mi,j,k X k ,   i ∈ [m], j ∈ [n],
+  A hash algorithm is a mathematical function that transforms                              k=0
+input data of arbitrary size into a fixed-size output, called a      where mi,j,k represents the k-th sector of the j-th chunk in
+hash value, which is designed to be unique, fast to compute,         file i. A tag is used to represent the j-th chunk through a KZG
+and practically irreversible. Define the hash function H : Fp →      polynomial commitment. i.e., σi,j = H(fi,j (τ )) = g fi,j (τ ) ∈
+G1 as: σ := H(m) = g m .                                             G1 , where τ is the trapdoor from KZG polynomial setup.
+  • One-wayness: It is easy to compute the hash value σ, but         Further, tags of each file are organized into a Merkle Tree
+     computationally infeasible to recover the original z input      to guarantee correct indexing and membership.
+     from the hash due to the discrete logarithm hard problem.             c) Protocol Workflow: The provable data possession
+  • Homomorphism: The hash function H is preimage-                   scheme for multiple files operates through five polynomial-
+     resistant and preserves linear combinations, namely,            time algorithms:
+     for anyPinteger t and any     {mi }ti=1 and {vi }ti=1 ⊆
+                t
+                                  Pt             Qt                     • Setup(λ) → pp: Generates public parameters pp, includ-
+     Fp , H     i=1 vi mi    = g i=1 vi mi =        i=1 g
+                                                          vi m i
+                                                                 =         ing bilinear group tuples (G1 , G2 , GT , e), a structured
+     Qt            vi
+        i=1 H(mi )    holds.                                               reference string (SRS) for degree s−1, and cryptographic
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                             3
+
+
+                                                                                                                          s−1
+    hash functions H1 (for Merkle Tree) and H2 , H2 (for           structured reference string (SRS) (g, g τ , . . . , g τ , h, hτ ),
+    Fiat-Shamir transcript hashing).                               which supports polynomial commitments of degree strictly
+                 m
+  • Store({Fi }i=1 ) → (data, meta): The DO encodes each           less than s. Cryptographic hash functions are fixed: H
+    chunk into fi,j (X), computes tags σi,j , constructs the       for homormorphic hashing, H1 for Merkle Tree construc-
+    Merkle Tree to obtain the root hash Γi for each file, and      tion, and H2 for Fiat-Shamir transcript binding. Finally,
+    outsources {Fi , {σi,j }, Merkle trees} to the CS. The DO      pp = (G1 , G2 , GT , e, p, g, h, SRS, H, H1 , H2 ) is published.
+    securely records {Γi }m i=1 and shares them with V.            Note that each DO has its own trapdoor τ to enable batch
+  • Chal(m, n, c) → chal: The verifier samples a shared            of polynomials and guarantee privacy of DO’s files.
+    challenge index set J ⊆ [n] with |J| = c, random
+    aggregation coefficients {vi,j }i∈[m],j∈J ← Fp , and per-      Algorithm 1 Setup
+    file evaluation points {ri }m
+                                i=1 ← Fp . For brevity, we omit    Require: security parameter λ
+    the index i in vi,j and simply write vj to denote vi,j . The   Ensure: public parameters pp
+    challenge is chal = (J, {vj }, {ri }, nonce), where nonce          Generate (G1 , G2 , GT, e, p, g, h) and
+                                                                    1:                                                   SRS       =
+    is a random value to resist replay attack.                                               s−1
+                                                                         g, g τ , . . . , g τ , h, hτ .
+  • ProofGen(chal, data, meta) → π: The CS aggregates
+                                                                    2: Fix cryptographic hashes H, H1 , H2 .
+    challenged chunks J and outputs the corresponding non-
+                                                                    3: Publish
+    interactive proofs π.
+  • Verify(chal, π, {Γi }, pp) → {accept, reject}: V vali-                   pp = (G1 , G2 , GT , e, p, g, h, SRS, H, H1 , H2 ).
+    dates the integrity of all files [m] via the proofs π.
+
+B. Security Model                                                        b) Files Storing: The Store algorithm handles data pre-
+                                                                   processing, cryptographic tagging, and metadata generation for
+   The security of the proposed batch-PDP scheme is formal-
+                                                                   outsourcing. For each file Fi (i ∈ [m]), the Data Owner parses
+ized through three core properties: correctness, soundness, and
+                                                                   every chunk j ∈ [n] into s field elements and         algebraically
+privacy.                                                                                                             Ps−1           k
+                                                                   encodes them as a polynomial fi,j (X) =             k=0 mi,j,k X .
+                                                                                                          fi,j (τ )
+Definition 1 (Correctness). If all parties (DO, CS, and V)         A KZG homomorphic tag σi,j = g                   ∈ G1 is computed
+execute the protocol honestly according to the specified algo-     for each chunk, providing a compact cryptographic binding
+rithms, the Verify algorithm outputs accept with probability       to the underlying data sectors. These tags are organized
+1.                                                                 as leaves in a Merkle Tree, where each leaf is hashed as
+                                                                   Li,j = H1 (i ∥ j ∥ σi,j ) to cryptographically bind tags to their
+Definition 2 (Soundness). Let A be a probabilistic
+                                                                   file and chunk indices. The tree root Γi is securely retained
+polynomial-time (PPT) adversary controlling the CS. A wins
+                                                                   by the DO (and later shared with the Verifier), while the raw
+the soundness game if it can produce a proof π that causes
+                                                                   data, tags, and Merkle authentication nodes are outsourced to
+Verify to output accept for a challenge involving corrupted,
+                                                                   the CS. This structure guarantees both data integrity and index
+modified, or unavailable data chunks with non-negligible
+                                                                   authenticity without requiring the DO to maintain local copies.
+probability. The scheme is sound if Pr[A wins] ≤ negl(λ),
+assuming:
+                                                                   Algorithm 2 Store
+  1) H1 is collision-resistant;
+  2) The KZG polynomial commitment scheme is evaluation-           Require: files {Fi }mi=1
+     binding and knowledge-sound (e.g., under the q-SDH or         Ensure: outsourced data, metadata
+     q-DLOG assumption);                                            1: for i = 1 to m do
+  3) The Fiat-Shamir hash functions H2 is modeled as random         2:     for j = 1 to n do
+     oracle.                                                        3:         Parse chunk j into s sectors and form fi,j (X).
+                                                                    4:         Compute tag σi,j = H(fi,j (τ )) = g fi,j (τ ) .
+Definition 3 (Privacy against Honest-but-Curious Verifier).         5:         Li,j = H1 (i ∥ j ∥ σi,j )
+Given the public audit transcript and the generated proof           6:     end for
+π, a PPT verifier cannot recover the challenged evaluations         7:     Build the ith Merkle Tree over leaves {Li,j }nj=1 .
+{yi = fi (ri )}m
+               i=1 or the underlying raw data sectors with non-     8:     Obtain root Γi .
+negligible advantage.                                               9: end for
+                                                                   10: DO sends (Fi , {σi,j }) to CS and records {Γi } for V.
+                    IV. P ROPOSED S CHEME
+A. Construction                                                         c) Challenge Generation: The Chal algorithm initi-
+     a) Setup: The Setup algorithm initializes the crypto-         ates the audit by sampling a challenge tuple chal =
+graphic environment and publishes the system-wide pub-             (J, {vj }j∈J , {ri }m
+                                                                                       i=1 ), where vj is short for vi,j . An index set
+lic parameters pp. It first generates a bilinear group tu-         J ⊆ [n] of size c for each file is selected to query the chunk
+ple (G1 , G2 , GT , e) of prime order p, selects public gen-       positions. Random coefficients {vj } are drawn uniformly
+erators g ∈ G1 and h ∈ G2 , and samples a secret                   from Fp to enable random linear aggregation of challenged
+trapdoor τ ∈ Fp . Using τ , the algorithm constructs the           chunks; this masks individual chunk values, prevents targeted
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                 4
+
+
+
+corruption, and enables homomorphic tag recombination. Ad-            Algorithm 4 ProofGen
+ditionally, independent per-file evaluation points {ri } are sam-     Require: challenge chal = (J, {vj }j∈J , {ri }m      i=1 , nonce)
+pled to support file-specific quotient consistency checks. The        Ensure: proof π
+challenge is transmitted to the CS alongside a fresh nonce to          1: for i = 1 to m do
+prevent replay or precomputation attacks.
+                                                                                         P
+                                                                       2:     fi (X) ← j∈J vj fi,j (X)
+                                                                                              v
+                                                                              bi ← j∈J σi,jj = g fi (τ )
+                                                                                    Q
+                                                                       3:
+Algorithm 3 Chal
+                                                                       4:     yi ← fi (ri )
+Require: parameters (m, n, c)                                          5:     sample µi ← Fp , set ỹi ← yi + µi , Ri ← g µi
+Ensure: challenge chal                                                 6:     build authentication path Authi for the ith Merkle tree
+ 1: Sample one shared challenged index set J ⊆ [n], |J| = c.           7:     wi (X) ← fiX−r(X)−yi
+                        $                                                                          i
+ 2: Sample random {vj ← − Fp }j∈J .                                    8: end for
+                        $
+                                                                                    Pm
+ 3: Sample random {ri ← − Fp }m                                        9: q(X) ←       i=1 wi (X)
+                               i=1
+ 4: Set                                                               10: Cq ← g q(τ )
+                                                                                            wi (τ ) ri
+                                                                                  Qm                      Pm
+             chal = (J, {vj }j∈J , {ri }m                             11: Cqr ←      i=1 g             = g i=1 ri wi (τ )
+                                        i=1 , nonce).
+                                                                      12: for i = 1 to m do
+                                                                      13:     αi ← H2 (chal, {Γi }, {bi , ỹi , Ri }, Cq , Cqr , i)
+      d) Proof Generation: Upon receiving Chal, the ProofGen          14: end for
+algorithm computes a compact, cross-file aggregated proof.            15: Q(X) ← q(X) +
+                                                                                                Pm
+For each file i, the challenged chunks are                                             Qm αii=1 αi fi (X)
+                                             P linearly combined      16: CQ ← Cq · i=1 bi
+into an aggregated polynomial fi (X) = j∈J vj fi,j (X), with          17: z ← H2 (chal, {Γi }, {bi , ỹi , Ri }, Cq , Cqr , CQ )
+its corresponding aggregated tag bi = g fi (τ ) . To preserve data    18: VQ ← Q(z)
+privacy against an honest-but-curious verifier, the exact evalu-      19: sample η ← Fp , set V     eQ ← VQ + η, RQ ← g η
+ation yi = fi (ri ) is additively masked as ỹi = yi + µi , and the                    Q(τ )−VQ
+                                                                      20: πbatch ← g     τ −z
+mask is committed as Ri = g µi . The CS then constructs per-
+                                                                      21: return
+file quotient polynomials wi (X) = fP     i (X)−yi
+                                            X−ri   and aggregates
+                                             m
+                                                                          π = {Ti , Authi , bi , ỹi , Ri }m
+                                                                                                                                               
+them into a global quotient q(X) = i=1 wi (X), producing                                                   i=1 , Cq , Cqr , VQ , RQ , πbatch
+                                                                                                                            e
+commitments
+  Pm               Cq = g q(τ ) for polynomial q(x) and Cqr =
+        ri wi (τ )
+g   i=1            for linear combination of polynomials wi (x).
+Crucially, the Fiat-Shamir heuristic is applied to derive folding
+coefficients αi after (Cq , Cqr ) are fixed in the transcript, pre-   relies on the following standard cryptographic assumptions:
+venting adaptive adversarial manipulation of theP   quotient layer.   Assumption 1 (Collision-Resistant Hashing). The hash func-
+                                                      m
+A final folded polynomial Q(X) = q(X) + i=1 αi fi (X)                 tions H1 (for Merkle tree construction) and H2 (for Fiat-
+is opened at a Fiat-Shamir-derived point z, yielding a single         Shamir transcript binding) are collision-resistant. No PPT
+                                    Q(τ )−VQ
+batch opening proof πbatch = g τ −z alongside a masked                adversary can find distinct inputs x ̸= x′ such that H1 (x) =
+global evaluation ṼQ and commitment RQ . The complete                H1 (x′ ) or H2 (x) = H2 (x′ ) with non-negligible probability.
+proof π is returned to the verifier V.
+     e) Verification: The Verify algorithm validates the proof        Assumption 2 (KZG Knowledge Soundness). The KZG
+through a sequence of deterministic checks that require only          polynomial commitment scheme over (G1 , G2 , GT , e) is
+a constant number of pairings, independent of the batch size          evaluation-binding and knowledge-sound under the q-SDH (or
+m. First, the Merkle tree indices J is verified Q     against each    q-DLOG) assumption. Specifically, given a valid opening proof
+stored root Γi , and the tag recombination b̂i = j∈J σi,jj is
+                                                              v       π = g w(τ ) for commitment C = g f (τ ) at point z with value v,
+checked against the claimed bi to ensure index authenticity           there exists a PPT extractor that outputs the unique polynomial
+and tag consistency. Second, the quotient-consistency relation        f (X) ∈ F<sp [X] satisfying f (z) = v.
+                                                      ?
+is enforced viaQthe pairing equation e(A · Cqr , h) = e(Cq , hτ ),    Assumption 3 (Discrete Logarithm Hardness). The discrete
+                 m                −ỹi
+where A =        i=1 (bi · Ri · g      ). Third, the verifier inde-   logarithm problem in G1 is computationally intractable. Given
+pendently derives {αi } using the same Fiat-Shamir transcript,        g ∈ G1 and Y = g y , no PPT adversary can recover y ∈ Fp
+reconstructs the folded commitment CQ and evaluation point            with non-negligible advantage.
+z, and verifies the final opening check e(CQ · RQ · g −ṼQ ·
+  z         ?                                                         Theorem 1 (Correctness). If the Data Owner, Cloud Server,
+πbatch , h) = e(πbatch , hτ ). Successful validation guarantees
+                                                                      and Verifier execute Algorithms 2, 3, 4, and 5 honestly, then
+that all challenged data across m files are intact, correctly
+                                                                      Verify outputs accept with probability 1.
+indexed, and unmodified, while the additive masks {µi , η}
+ensure that no raw data or exact polynomial evaluations are           Proof. Fix an honest execution for challenge chal =
+leaked during the audit.                                              (J, {vj }j∈J , {ri }m    nonce). For each file i ∈ [m], the prover
+                                                                                          i=1 ,P
+                                                                      computes fi (X) = j∈J vj fi,j (X) and yi = fi (ri ). Since
+B. Security Analysis                                                  fi (ri ) − yi = 0, the quotient polynomial wi (X) = fiX−r  (X)−yi
+                                                                                                                                     i
+  We formally establish the correctness, soundness, and pri-                       Pm with deg(wi ) ≤ s − 2. The global quotient
+                                                                      is well-defined
+vacy of the proposed batch-PDP scheme. The security analysis          q(X) =          i=1 wi (X) and folded polynomial Q(X) =
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                  5
+
+
+
+Algorithm 5 Verify                                                            By bilinearity, e(CQ · RQ · g −ṼQ · πbatch
+                                                                                                                    z
+                                                                                                                          , h) = e(πbatch , hτ ).
+Require:    chal, proof π, roots {Γi }m
+                                      i=1 , {vj }
+                                                                              All verification steps succeed deterministically, hence Verify
+Ensure: accept/reject                                                         outputs accept.
+ 1: for i = 1 to m do
+                                                                              Theorem 2 (Soundness). Let A be a PPT adversary con-
+ 2:     Check Merkle tree correctness with (Γi , Authi ) for all
+                                                                              trolling the Cloud Server. Under Assumptions 1–2 and mod-
+    chunks inQJ
+                        v                                                     eling H2 as a random oracle, if A outputs a proof π that
+ 3:     b̂i ← j∈J σi,jj
+                                                                              causes Verify to accept for a challenge involving corrupted
+ 4:     if b̂i ̸= bi then                                                     or unavailable data, then A succeeds with probability at most
+ 5:          return reject                                                    negl(λ).
+ 6:     end if
+ 7: end for                                                                   Proof. Assume       A     produces       an     accepting         proof
+           Qm                 −ỹi                                            π = ({Γi , Authi , bi , ỹi , Ri }m
+                                   
+ 8: A ←       i=1 bi · Ri · g                                                                                    i=1 , Cq , Cqr , ṼQ , R Q , πbatch ).
+ 9: if e(A · Cqr , h) ̸= e(Cq , hτ ) then                                     Acceptance implies three sequential constraints:
+10:     return reject                                                            1. Authenticated Tag Binding. Q       The verifier accepts the
+                                                                                                                                        v
+11: end if                                                                    Merkle tree proofs and verifies b̂i = (j,σi,j )∈Ti σi,jj = bi . By
+12: for i = 1 to m do                                                         Assumption 1, except with negligible probability, no adversary
+13:     αi ← H2 (chal, {Γi }, {bi , ỹi , Ri }, Cq , Cqr , i)                 can forge an authentication path or find a collision in H1 . Thus,
+14: end for                                                                   each accepted bi is cryptographically bound to the legitimate
+                   Qm α
+15: CQ ← Cq · i=1 bi i                                                        challengedPtags {σi,j }j∈J , and consequently to the polynomial
+16: z ← H2 (chal, {Γi }, {bi , ỹi , Ri },Cq , Cqr , CQ )                   fi (X) = j∈J vj fi,j (X) via bi = g fi (τ ) .
+17: if e CQ · RQ · g −VQ · πbatch
+                         e       z
+                                       , h ̸= e(πbatch , hτ ) then               2. Quotient-Consistency Enforcement. Since Ri = g µi for
+18:     return reject                                                         a unique µi ∈ Fp , define yi := ỹi −µi and wi (X) := fiX−r     (X)−yi
+                                                                                                                                                  i
+                                                                                                                                                      .
+19: end if
+                                                                              The accepted pairing equation e(A · Cqr , h)Q = e(Cq , hτ )
+20: return accept
+                                                                              implies A·Cqr = Cqτ in G1 . Substituting A = i g (τ −ri )wi (τ )
+                                                                              yields:
+                                                                                                    P          P
+          Pm                                                                                   gτ   i wi (τ )−     i ri wi (τ )   · Cqr = Cqτ
+q(X) + i=1 αi fi (X) both satisfy deg ≤ s − 1, ensuring                                  =⇒ Cqr = g
+                                                                                                         P
+                                                                                                             i ri wi (τ )   and Cq = g
+                                                                                                                                         P
+                                                                                                                                           i wi (τ )   .
+all commitments are valid under the SRS.
+   The Merkle tree authentication can be checked with tree                           Thus, (Cq , Cqr ) is algebraicallyPbound to a unique global
+root Γi . Further, the tag recombination checks   pass due to                        quotient polynomial q(X) =            i wi (X) that satisfies the
+                                            Q       v
+the adoption of homormorphic hash: b̂i = j∈J σi,jj = bi =                            quotient relation for each file.
+  fi (τ )                                                                               3. Fiat-Shamir Transcript Ordering & Folded Opening.
+g         .
+   For the quotient-consistency check, observe that for each i:                      The folding coefficients αi are derived via H2 after (Cq , Cqr )
+                                                                                     are fixed in the transcript. In the random oracle model, A
+bi ·Ri ·g −ỹi = g fi (τ ) ·g µi ·g −(yi +µi ) = g fi (τ )−yi = g (τ −ri )wi (τ ) . cannot adaptively choose a malicious q(X) as a function of
+                 Qm                                P             P
+                                                                                     P i } to cancel errors in the folded term Q(X) = q(X) +
+                                                                                     {α
+Thus, A := i=1 (bi Ri g −ỹi ) = gP              τ    i wi (τ )−   i ri wi (τ ) . By
+                                                                                        i αi fi (X).
+definition, Cq = g q(τ ) and Cqr = g i ri wi (τ ) . Hence,                              The final pairing check e(CQ · RQ · g −ṼQ · πbatch  z
+                                                                                                                                                  , h) =
+                                                                                                  τ                     −ṼQ    z        τ
+                                                                                     e(πbatch , h ) implies CQ · RQ · g      · πbatch = πbatch , which is
+                         A · Cqr = g τ q(τ ) = Cqτ .
+                                                                                     exactly the KZG opening verification for commitment CQ at
+Applying bilinearity yields e(A · Cqr , h) = e(Cq , hτ ), satisfy- point z with value ṼQ . By Assumption 2 (knowledge sound-
+ing the first pairing check.                                                         ness), there exists a PPT extractor that recovers a unique poly-
+    Since the transcript is identical for both parties, the verifier nomial F̂ (X)                   ∈ F<s [X] consistent with this opening. Since
+                                                                                                  Q αi p                                   P
+derives identical folding coefficients αi = H2 (. . . ) and eval- CQ = Cq · i bi , we must have F̂ (X) = q(X)+ i αi fi (X).
+uation pointQz = H2 (. . . ). The folded commitment satisfies                           If A substituted corrupted chunks, the corresponding fi (X)
+                    αi         Q(τ )                                                 would    deviate from the authentic encoding. This deviation
+CQ = Cq · i bi = g                   . Finally,
+                                                                                     propagates to q(X) and F̂ (X), causing the opening check to
+                                                                         Q(τ )−VQ
+ CQ · RQ · g −ṼQ · πbatch  z
+                                   = g Q(τ ) · g η · g −(VQ +η) · g z τ −z           fail at the random point z with probability at least 1 − s/p by
+                                                       z(Q(τ )−VQ )
+                                                                                     the Schwartz-Zippel lemma. Therefore, any accepting forgery
+                                   = g Q(τ )−VQ · g τ −z                             implies a break of H1 collision resistance, KZG knowledge
+                                       (Q(τ )−VQ )(1+ τ −z  z
+                                                               )                     soundness, or the random oracle property of H2 , each occur-
+                                   =g
+                                                      τ
+                                                                                     ring with negligible probability.
+                                   = g (Q(τ )−VQ ) τ −z
+                                       Q(τ )−V τ
+                                                  Q
+                                                                                     Theorem 3 (Privacy against Honest-but-Curious Verifier). Un-
+                                   = g τ −z                                          der Assumption 3, the verifier cannot recover the challenged
+                                        τ
+                                                                                     evaluations {yi }mi=1 or the underlying data sectors from the
+                                   = πbatch  .                                       audit transcript and proof π with non-negligible advantage.
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                               6
+
+
+
+Proof. The proof transcript (in Algorithm 4) contains (ỹi , Ri )     commitment Ri , and one masked field evaluation ỹi , contribut-
+for each file i, and (ṼQ , RQ ) for the folded opening. By con-      ing (c + 2)|G1 | + |p| per file. Furthermore, each file requires a
+                                        $                             compact Tag-IMHT multi-proof authentication path consisting
+struction, ỹi = yi + µi where µi ←    − Fp is freshly sampled per
+audit round. Since µi is uniformly distributed and independent        of νMP (c, n) hash digests, adding νMP (c, n)|h| to the per-file
+of yi , ỹi is statistically indistinguishable from a uniform field   transmission. Across m files, the linear communication cost
+element (one-time pad property). The commitment Ri = g µi             is therefore m ((c + 2)|G1 | + |p| + νMP (c, n)|h|). The cross-
+computationally hides µi under Assumption 3. Recovering µi            file batch aggregation layer introduces a fixed cryptographic
+from Ri is equivalent to solving the discrete logarithm problem       overhead that is invariant to m: two quotient commitments
+in G1 , which is infeasible for PPT adversaries. The same             (Cq , Cqr ), one folded commitment (CQ ), one global masking
+argument applies to (ṼQ , RQ ) with fresh mask η.                    commitment (RQ ), one batch opening proof (πbatch ), and one
+   Since all masking values are refreshed independently in ev-        globally masked evaluation (ṼQ ). This constant footprint adds
+ery audit round, cross-round correlation attacks are prevented.       exactly 4|G1 | + 2|p| to the total bandwidth. By replacing c
+The remaining transcript elements (challenges, commitments            independent Merkle authentication paths with a single multi-
+Cq , Cqr , CQ , and πbatch ) reveal only algebraic relations bound    proof per file, the protocol significantly compresses the authen-
+to the masked values. Consequently, the verifier’s view of {yi }      ticated evidence payload, ensuring that the total communica-
+or the raw sectors {mi,j,k } is computationally indistinguish-        tion scales linearly with m and c while the batch-aggregation
+able from random, establishing privacy against an honest-but-         cryptographic terms remain strictly constant.
+curious verifier.                                                           c) Optional merged verification.: If the two pairing
+                                                                      checks are merged via random linear combination, the verifier
+                                                                      pairing cost can be reduced from 4P to 2P in practice (with
+C. Complexity Analysis                                                the standard batching soundness caveat in the random oracle
+                                                                      model).
+      a) Computation Complexity.: The computational over-
+head of the scheme is dominated by group exponentiations
+and bilinear pairings. Let E, P denote the time overhead              D. Dynamic File Management
+of exponentiation and bilinear pairing, respectively. During             The proposed batch-PDP scheme natively supports dynamic
+proof generation (Algorithm 4), the prover processes each             file operations through its modular Merkle tree structure and
+of the m files independently. For every file i, reconstructing        independent per-file polynomial commitments. File addition
+the aggregated tag bi from c challenged sectors requires c            and deletion can be performed efficiently without regenerating
+exponentiations, while generating the per-file privacy mask-          public parameters, or recomputing tags for unrelated files. The
+ing commitment Ri and its associated SRS-based evaluation             batch verification framework (Algorithm 5) seamlessly accom-
+consumes 2 exponentiations. This yields a per-file cost of            modates dynamic file sets without protocol modification.
+(c + 2)E, scaling to m(c + 2)E across the batch. Addition-                  a) File Addition.: When a Data Owner (DO) uploads a
+ally, the prover computes the global quotient commitments             new file Fm+1 to the Cloud Server (CS), the following fields
+Cq and Cqr , the global masking commitment RQ , and the               and states must be updated across the protocol lifecycle:
+final batch opening proof πbatch , each requiring exactly one            • Store Algorithm: The DO increments the batch size
+exponentiation via the SRS. Consequently, the prover’s total                m ← m + 1. For each chunk j ∈ [n′ ] of the new file,
+exponentiation complexity is precisely m(c + 2)E + 4E. Dur-                 the DO computes the polynomial encoding fm+1,j (X),
+ing verification (Algorithm 5), the verifier first authenticates            generates homomorphic tags σm+1,j = g fm+1,j (τ ) , and
+the challenged tags by recomputing the aggregated tag b̂i                   constructs leaf nodes Lm+1,j = H1 ((m + 1)∥j∥σm+1,j ).
+for each file (c exponentiations) and verifying one auxiliary               A new Merkle tree is built to yield the root Γm+1 .
+commitment, contributing m(c + 1)E. The core cryptographic                  The DO securely stores Γm+1 and shares it with the
+validation relies on two constant-size pairing checks: the first            Verifier (V). The CS receives {Fm+1,j }, {σm+1,j }, and
+                                                      ?
+enforces quotient consistency via e(A · Cqr , h) = e(Cq , hτ ),             the Merkle authentication nodes.
+and the second verifies the folded polynomial opening via                • ProofGen Algorithm: The loop bound in Algorithm 4
+                           ?
+e(CQ RQ g −ṼQ πbatch
+                 z
+                      , h) = e(πbatch , hτ ). Each check consumes           extends to i = 1 to m + 1. The newly computed per-file
+exactly two pairings, resulting in a fixed verifier pairing                 fields {fm+1 (X), bm+1 , ym+1 , ỹm+1 , Rm+1 , gm+1 (X)}
+complexity of 4P , which remains strictly independent of both               are incorporated into the global aggregation layer.
+the batch size m and the number of challenged chunks c.                     Specifically, the global quotient polynomial updates
+(As noted in Remark 1, these two checks can be merged via                   as qnew (X) ← q(X) + gm+1 (X), and the commit-
+random linear combination to reduce the pairing cost to 2P                  ments become Cq ← Cq · g gm+1 (τ ) , Cqr ← Cqr ·
+in practice.)                                                               (g gm+1 (τ ) )rm+1 . The Fiat-Shamir transcript naturally ab-
+      b) Communication Complexity.: The communication                       sorbs Γm+1 and the new per-file terms. Consequently,
+overhead is determined by the byte size of the audit proof                  the folding coefficients {αi }m+1
+                                                                                                            i=1 are freshly derived via
+π transmitted from the cloud server to the verifier. Let |G1 |              H2 over the expanded transcript. The P       folded polyno-
+                                                                                                                          m+1
+denote the size of a group element in G1 and |p| denote the size            mial updates to Q(X) ← qnew (X) + i=1 αi fi (X),
+of a field element in Fp . Per file, the proof payload includes             and
+                                                                            Qm+1  the folded commitment becomes CQ ← Cq ·
+                                                                                      αi
+c challenged chunk tags, one aggregated tag bi , one masking                   i=1 bi . The evaluation point z is recomputed as
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                                                 7
+
+
+
+                                  Table II: Communication and Computation Overhead (Updated This Work)
+  Category                    Phase                               Ours-SP (single-path)                                                   Ours-MP (multi-proof)
+                              Store                         mns|p| + mn|G1 | + m|h|                                                   mns|p| + mn|G1 | + m|h|
+  Communication Overhead      Chal                            c|p| + c log2 n + m|p|                                                      c|p| + c log2 n + m|p|
+                              ProofGen           m((c + 2)|G1 | + |p| + c log2 n |h|) + 4|G1 | + 2|p|                      m((c + 2)|G1 | + |p| + νMP (c, n)|h|) + 4|G1 | + 2|p|
+                              Store                    mnE + m(2n − 1)H + O(mns)F                                                  mnE + m(2n − 1)H + O(mns)F
+  Computation Overhead        ProofGen       m((c + 2)E + (c − 1)M + c log2 n H) + 4E + O(mcs)F                         m((c + 2)E + (c − 1)M + γMP (c, n)H) + 4E + O(mcs)F
+                              ProofVeri         4P + m((c + 1)E + cM + c log2 n H) + O(m)H                                 4P + m((c + 1)E + cM + γ̄MP (c, n)H) + O(m)H
+
+
+                                            Table III: Compact TC25-Style Comparison (Updated Verifier)
+ Category        Phase              YuTC25 (Table II, Our)                          ZhangTPDS23 (Batch)                                           Ours-MP (Updated)
+                 Store               mn|p| + m|G1 | + |h|                           mN (|Copy| + n|G1 |)†                                    mns|p| + mn|G1 | + m|h|
+ Communication   Chal                     2|p| + log2 c                        m(c(log2 n + |p|) + |p|) + 2|p|†                                  c|p| + c log2 n + m|p|
+                 ProofGen    (n + 1)|p| + c log2 m |h| + (c + 1)|G1 |       3|G1 | + |p| (Table VIII, multiple files)             m((c + 2)|G1 | + |p| + νMP (c, n)|h|) + 4|G1 | + 2|p|
+                 Store                        E                                     2mN nE + mN nM ‡                                      mnE + m(2n − 1)H + O(mns)F
+ Computation     ProofGen                     E                            (mc + 2s − 5)M + (mc + m + 2s − 2)E                 m((c + 2)E + (c − 1)M + γMP (c, n)H) + 4E + O(mcs)F
+                 ProofVeri       (n + c + 4)E + (n + c + 1)M            4P + (N mc + N m + 3)E + (N mc + 3N − 2)M                 4P + m((c + 1)E + cM + γ̄MP (c, n)H) + O(m)H
+
+                                                † derived from ZhangTPDS23 protocol message format in batch mode.
+                                                      ‡ scaled from ZhangTPDS23 Table V (TagGen) to m files.
+
+
+
+      z ← H2 (·, {Γi }m+1                    m+1
+                       i=1 , {bi , ỹi , Ri }i=1 , Cq , Cqr , CQ ). The                        [3] Boneh, D., Drake, J., Fisch, B. & Gabizon, A. Efficient polynomial
+      folded evaluation updates to VQ ← Q(z), and the batch                                        commitment schemes for multiple points and polynomials. Cryptology
+                                                                                                   EPrint Archive. (2020)
+      opening proof πbatch is regenerated using the new Q(τ )                                  [4] A. Gabizon, Z. J. Williamson, and O. Ciobotaru, “PLONK: Permuta-
+      and VQ .                                                                                     tions over Lagrange-bases for Oecumenical Noninteractive arguments of
+                                                                                                   Knowledge,” IACR Cryptology ePrint Archive, Report 2019/953, 2019.
+      b) File Deletion.: To securely remove an existing file                                       https://eprint.iacr.org/2019/953
+Fidel (1 ≤ idel ≤ m), the system performs lightweight state
+pruning. The CS permanently erases {Fidel ,j }, {σidel ,j }, and
+the associated Merkle tree. The DO and V remove Γidel from
+their authenticated root sets. The active file count decrements
+to m ← m−1. To avoid recomputing tags and Merkle roots for
+surviving files, the scheme retains original file indices (sparse
+indexing). Consequently, deletion incurs zero cryptographic
+recomputation for remaining files. The fields {σk,j } and Γk
+for k ̸= idel remain valid and unchanged. In ProofGen,
+the values or variables q(X), Cq , Cqr , Q(X), CQ , z, VQ are
+updated, according to Algorithm 4.
+      c) Complexity Analysis of Dynamic Operations.:
+Dynamic        file     lifecycle          management          requires
+synchronized updates across the Merkle authentication
+layer and the polynomial commitment layer. The
+computational overhead for updating the specified fields
+{Γ, q(X), Cq , Cqr , Q(X), CQ , z, VQ } during addition and
+deletion is analyzed as follows:
+
+
+E. Comparison Paragraph (for related-work discussion)
+   Compared with YuTC25, this scheme keeps Tag-IMHT
+indexed authentication but adds cross-file batch folding and
+single-point opening. Compared with ZhangTPDS23, this
+scheme preserves batch-auditing efficiency while explicitly
+authenticating challenged tags/indices via Tag-IMHT. The
+remaining linear factor mainly comes from authenticated evi-
+dence, which is reduced by multi-proof.
+
+                                R EFERENCES
+ [1] Luo, Z., Jia, Y., Gracia, A.V.O. and Kate, A. Cauchyproofs: Batch-
+     Updatable Vector Commitment with Easy Aggregation and Application
+     to Stateless Blockchains. In S&P, 2025, pp. 1947-1963.
+ [2] Kate, A., Zaverucha, G.M. and Goldberg, I. Constant-size commitments
+     to polynomials and their applications. In Asiacrypt, 2010, pp. 177-194.
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                                         8
+
+
+
+
+                                        Table IV: Theoretical Overhead Comparison (TC25-style, compact)
+ Category        Phase                      YuTC25                                  ZhangTPDS23 (Batch)                                  Ours-MP (This Work)
+                 Store               mn|p| + m|G1 | + |h|                            mN (|Copy| + n|G1 |)†                           mns|p| + mn|G1 | + m|h|
+ Communication   Chal                     2|p| + log2 c                        m(c(log2 n + |p|) + |p|) + 2|p|†                         c|p| + c log2 n + m|p|
+                 ProofGen    (n + 1)|p| + c log2 m |h| + (c + 1)|G1 |         3|G1 | + |p| (Table VIII, multi-files)      m((c + 2)|G1 | + |p| + νM P (c, n)|h|) + 3|G1 | + |p|
+                 Store                        E                                     2mN nE + mN nM ‡                              mnE + m(2n − 1)H + O(mns)F
+ Computation     ProofGen                     E                            (mc + 2s − 5)M + (mc + m + 2s − 2)E         m((c + 2)E + (c − 1)M + γM P (c, n)H) + 3E + O(mcs)F
+                 ProofVeri       (n + c + 4)E + (n + c + 1)M            4P + (N mc + N m + 3)E + (N mc + 3N − 2)M         2P + m((c + 1)E + cM + γ̄M P (c, n)H) + O(m)H
+
+                                    † communication terms are derived from ZhangTPDS23 protocol messages in batch mode.
+                                                  ‡ scaled from ZhangTPDS23 Table V (TagGen) to m files.
+

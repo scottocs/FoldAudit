@@ -1,0 +1,25 @@
+{
+  "config": {
+    "num_files": 4,
+    "chunks_per_file": 64,
+    "sectors_per_chunk": 8,
+    "challenged_chunks": 8,
+    "prime_modulus": 2305843009213693951,
+    "field_bytes": 32,
+    "group_bytes": 48,
+    "hash_bytes": 32,
+    "rng_seed": 7
+  },
+  "challenge_indices": [
+    17,
+    18,
+    20,
+    30,
+    31,
+    35,
+    56,
+    62
+  ],
+  "honest_accept": true,
+  "tampered_accept": false
+}
