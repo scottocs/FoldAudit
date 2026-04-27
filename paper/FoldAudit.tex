@@ -41,7 +41,7 @@
 
 
 
-\usepackage{hyperref}
+% hyperref is loaded with options below.
 \usepackage[russian,english]{babel}
 \usepackage{xcolor}
 \usepackage{amssymb}% http://ctan.org/pkg/amssymb
@@ -304,9 +304,9 @@ Despite these cryptographic improvements, practical storage deployments frequent
 
 Given the substantial size of individual files in real-world applications, auditing every data block is computationally prohibitive and economically unviable. To address this challenge, modern PDP schemes universally employ probabilistic sampling strategies. During an audit round, the verifier randomly selects a subset of data blocks and assigns independent random coefficients to construct a linear combination of challenged sectors. This approach reduces the proof size and verification complexity from linear $O(n)$ to constant or logarithmic $O(c)$ with respect to the total number of blocks, where $c \ll n$ denotes the challenge size. By carefully calibrating the number of sampled blocks, auditors can achieve arbitrarily high detection probabilities for data corruption while maintaining minimal communication and computation overhead. The randomness of the challenge set ensures that malicious providers cannot precompute proofs or selectively store only frequently accessed blocks without facing a high risk of detection.
 
-However, the introduction of probabilistic sampling and homomorphic aggregation introduces subtle yet critical privacy vulnerabilities. In many existing batch auditing designs, challenge generation mechanisms, evaluation points, and masking techniques are either oversimplified or structurally coupled across files. If challenge points are shared, folding weights are predictable, or masking scalars lack cryptographic commitment, an honest-but-curious verifier or public ledger observer can exploit the linear algebraic structure of aggregated evaluations. Through cross-round correlation analysis or linear system inversion on publicly disclosed challenge-response transcripts, adversaries may reconstruct underlying polynomial evaluations $f(r_i)$ or even infer sensitive sector values. Such privacy leakage fundamentally contradicts the confidentiality requirements of modern cloud and decentralized storage, highlighting the necessity of integrating rigorous, one-time pad masking with binding commitments directly into the batch verification algebraic structure to prevent statistical inference attacks.
+However, the introduction of probabilistic sampling and homomorphic aggregation introduces subtle yet critical privacy vulnerabilities. In many existing batch auditing designs, challenge generation mechanisms, evaluation points, and masking techniques are either oversimplified or structurally coupled across files. If challenge points are shared, folding weights are predictable, or masking scalars lack statistically hiding commitments, an honest-but-curious verifier or public ledger observer can exploit the linear algebraic structure of aggregated evaluations. Through cross-round correlation analysis, low-entropy candidate testing, or linear system inversion on publicly disclosed challenge-response transcripts, adversaries may reconstruct underlying polynomial evaluations $f(r_i)$ or even infer sensitive sector values. Such privacy leakage fundamentally contradicts the confidentiality requirements of modern cloud and decentralized storage, highlighting the necessity of integrating rigorous one-time masking with hiding commitments directly into the batch verification algebraic structure to prevent statistical inference attacks.
 
-To address the aforementioned challenges, we propose \textbf{FoldAudit}, a novel batch-verifiable PDP scheme that simultaneously achieves constant-time multi-file verification, tight cryptographic soundness, and robust evaluation privacy. FoldAudit introduces a layered algebraic folding architecture: (i) independent per-file challenge points $\{r_i\}$ to structurally isolate file-specific quotient polynomials and prevent cross-file pole cancellation; (ii) a Fiat-Shamir derived random folding scalar $\rho$ applied to quotient commitments after they are fixed, ensuring that batch aggregation remains algebraically unpredictable and bias-resistant; and (iii) fresh one-time pad masking coupled with group commitments to statistically hide challenged evaluations and point evaluations from curious verifiers. By leveraging the Zero Multiplicity Distance Lemma, we formally derive a tight soundness error bound $\epsilon \leq \frac{s+m-1}{p-m}$, guaranteeing that any adversarial error cancellation or adaptive forgery is detected with overwhelming probability. Theoretical analysis and experimental evaluations demonstrate that FoldAudit reduces on-chain verification to a constant number of pairings independent of batch size, supports stateless dynamic file updates without global state recomputation, and maintains provable privacy against honest-but-curious auditors, making it highly suitable for large-scale, privacy-sensitive decentralized storage environments.
+To address the aforementioned challenges, we propose \textbf{FoldAudit}, a novel batch-verifiable PDP scheme that simultaneously achieves efficient multi-file verification, tight cryptographic soundness, and robust evaluation privacy. FoldAudit introduces a layered algebraic folding architecture: (i) independent per-file challenge points $\{r_i\}$ to structurally isolate file-specific quotient polynomials and prevent cross-file pole cancellation; (ii) a Fiat-Shamir derived random folding scalar $\rho$ applied after the proof statement is fixed, ensuring that batch aggregation remains algebraically unpredictable and bias-resistant; and (iii) statistically hiding Pedersen mask commitments verified through zero-knowledge masked-opening Sigma proofs. The folded KZG relation yields a soundness error bounded by $\epsilon \leq \frac{m-1}{p}+\mathsf{negl}(\lambda)$ for challenged corrupted data, guaranteeing that adversarial cross-file cancellation is detected with overwhelming probability. Theoretical analysis and experimental evaluations demonstrate that FoldAudit keeps verification dominated by challenged-tag aggregation and a concrete masked-opening Sigma proof, supports stateless dynamic file updates without global state recomputation, and maintains provable privacy against honest-but-curious auditors, making it highly suitable for large-scale, privacy-sensitive decentralized storage environments.
 
 
 
@@ -333,10 +333,10 @@ $\lambda$ & Security parameter. \\
 $p$ & Prime order of the finite field $\mathbb{F}_p$ and bilinear groups $(\mathbb{G}_1, \mathbb{G}_2, \mathbb{G}_T)$. \\
 $[m]$ & Index set $\{1, 2, \dots, m\}$ for the audited file batch. \\
 $\mathbb{F}_p^{<d}[X]$ & Vector space of univariate polynomials over $\mathbb{F}_p$ with degree strictly less than $d$. \\
-$g, h$ & Public generators of $\mathbb{G}_1$ and $\mathbb{G}_2$, respectively. \\
+$g, u, h$ & Public generators, where $g,u\in\mathbb{G}_1$ are independent Pedersen bases and $h\in\mathbb{G}_2$ is the KZG pairing base. \\
 $e(\cdot, \cdot)$ & Efficiently computable, non-degenerate bilinear map $e: \mathbb{G}_1 \times \mathbb{G}_2 \to \mathbb{G}_T$. \\
 $\tau$ & Secret trapdoor used for Structured Reference String (SRS) generation (held by DO). \\
-SRS & Public parameters $(g, g^\tau, \dots, g^{\tau^{s-1}}, h, h^\tau)$ supporting polynomial degrees $< s$. \\
+SRS & Public parameters $(g,u, g^\tau, \dots, g^{\tau^{s-1}}, h, h^\tau)$ supporting polynomial degrees $< s$. \\
 $H_1$ & Collision-resistant hash function for Merkle tree construction. \\
 $H_2$ & Fiat-Shamir random oracle for transcript binding and deterministic challenge derivation. \\
 $m, n, s, c$ & Number of files, chunks per file, sectors per chunk, and challenged chunks per file. \\
@@ -344,27 +344,23 @@ $i, j, k$ & Indices for files ($i \in [m]$), chunks ($j \in [n]$), and sectors (
 $m_{i,j,k}$ & $k$-th sector value of chunk $j$ in file $i$. \\
 $f_{i,j}(X)$ & Polynomial encoding of chunk $j$ in file $i$: $f_{i,j}(X) = \sum_{k=0}^{s-1} m_{i,j,k} X^k$. \\
 $\sigma_{i,j}$ & KZG homomorphic tag for $f_{i,j}(X)$: $\sigma_{i,j} = g^{f_{i,j}(\tau)} \in \mathbb{G}_1$. \\
-% $L_{i,j}$ & Leaf node of Merkle tree: $L_{i,j} = H_1(i \| j \| \sigma_{i,j})$. \\
+$L_{i,j}$ & Merkle leaf for tag authentication: $L_{i,j}=H_1(\mathsf{leaf}\|\mathsf{fid}_i\|j\|\mathsf{enc}(\sigma_{i,j}))$. \\
 $\Gamma_i$ & Root hash of the Merkle tree for file $i$. \\
 $J$ & Challenged chunk index set, $J \subseteq [n]$ with $|J| = c$. \\
-$v_j$ & Short for $v_{i,j}$, random coefficient for challenged chunk $j$ of file $i$. \\
+$v_{i,j}$ & Random coefficient for challenged chunk $j$ of file $i$ (written as $v_j$ when the same coefficient notation is used for all files). \\
 $r_i$ & Random evaluation point for file $i$ (used for per-file quotient construction). \\
-$f_i(X)$ & Aggregated polynomial for file $i$: $f_i(X) = \sum_{j \in J} v_j f_{i,j}(X)$. \\
+$f_i(X)$ & Aggregated polynomial for file $i$: $f_i(X) = \sum_{j \in J} v_{i,j} f_{i,j}(X)$. \\
 $y_i$ & Evaluation claim for file $i$: $y_i = f_i(r_i)$. \\
-$b_i$ & Aggregated homomorphic tag: $b_i = \prod_{j \in J} \sigma_{i,j}^{v_j} = g^{f_i(\tau)}$. \\
-$\mu_i, \nu_i, \eta$ & Fresh additive masking scalars for per-file evaluations, point-$z$ evaluations, and global privacy. \\
-$\tilde{y}_i, \tilde{v}_{i,z}, \tilde{V}_W$ & Masked evaluations: $\tilde{y}_i = y_i + \mu_i$, $\tilde{v}_{i,z} = f_i(z) + \nu_i$, $\tilde{V}_W = V_W + \eta$. \\
-$R_i, S_i, R_W$ & Masking commitments: $R_i = g^{\mu_i}$, $S_i = g^{\nu_i}$, $R_W = g^\eta$. \\
+$b_i$ & Commitment to the aggregated file polynomial: $b_i=g^{f_i(\tau)}=\prod_{j \in J} \sigma_{i,j}^{v_{i,j}}$. In $\ProofGen$, it is computed from the coefficients of $f_i(X)$ using the SRS. \\
+$\mu_i,\theta_i$ & Fresh additive mask and Pedersen blinding scalar for the per-file evaluation $y_i$. \\
+$\tilde{y}_i$ & Masked evaluation: $\tilde{y}_i = y_i + \mu_i$. \\
+$R_i,\Pi_{\mathsf{pm}}$ & Pedersen mask commitment $R_i = g^{\mu_i}u^{\theta_i}$ and the Fiat--Shamir Sigma masked-opening proof. \\
 $w_i(X)$ & Per-file quotient polynomial: $w_i(X) = (f_i(X) - y_i)/(X - r_i)$. \\
-$C_{w_i}$ & Commitment to per-file quotient: $C_{w_i} = g^{w_i(\tau)}$. \\
-$\rho$ & Fiat-Shamir derived folding scalar for batch quotient-sum (sampled after $\{C_{w_i}\}$ are fixed). \\
-$W(X)$ & Batch quotient-sum polynomial: $W(X) = \sum_{i=1}^m \rho^{i-1} w_i(X)$. \\
-$C_W$ & Commitment to batch quotient-sum: $C_W = \prod_{i=1}^m C_{w_i}^{\rho^{i-1}} = g^{W(\tau)}$. \\
-$z$ & Random evaluation point for batch opening (Fiat-Shamir derived, $z \notin \{r_i\}_{i=1}^m$). \\
-$V_W$ & True evaluation of batch polynomial: $V_W = W(z)$. \\
-$\pi_{\text{batch}}$ & KZG batch opening proof: $g^{(W(\tau) - V_W)/(\tau - z)}$. \\
-$\text{chal}$ & Challenge tuple $(J, \{v_j\}_{j \in J}, \{r_i\}_{i=1}^m, \text{nonce})$. \\
-$\pi$ & Complete audit proof containing tags, commitments, masked values, and $\pi_{\text{batch}}$. \\
+$D_{w_i}$ & Hiding commitment to the quotient witness: $D_{w_i}=g^{w_i(\tau)}u^{\xi_i}$ with fresh $\xi_i\leftarrow\FF_p$. \\
+$\rho$ & Fiat-Shamir derived folding scalar for the masked-opening proof (sampled after $\{D_{w_i}\}$ are fixed). \\
+$P_0,P_1,P_2$ & Folded Sigma verification accumulators checked by $e(P_1P_0^\chi,h)=A_F\cdot e(P_2,h^\tau)$. \\
+$\text{chal}$ & Challenge tuple $(J, \{v_{i,j}\}_{i\in[m],j \in J}, \{r_i\}_{i=1}^m, \text{nonce})$. \\
+$\pi$ & Complete audit proof $\left(\left\{\mathsf{Auth}_i,\tilde{y}_i,R_i,D_{w_i},b_i,\{\sigma_{i,j}\}_{j\in J}\right\}_{i=1}^m,\Pi_{\mathsf{pm}}\right)$. \\
 \hline
 \end{tabular}
 \end{table}
@@ -372,89 +368,205 @@ $\pi$ & Complete audit proof containing tags, commitments, masked values, and $\
 
 \subsection{Basics of Polynomials}
 
-Let $\FF_p$ denote a finite field of prime order $p$, where $p$ is determined by a security parameter $\lambda$. For a positive integer $d$, let $\FF_p^{<d}[X]$ denote the vector space of univariate polynomials over $\FF_p$ with degree strictly less than $d$. Polynomial indeterminates are denoted by uppercase letters (e.g., $X$), while field elements and coefficients use lowercase letters (e.g., $x, z, r \in \FF_p$).
+Let $\FF_p$ be a finite field of prime order $p$, where $p$ is super-polynomial in the security parameter $\lambda$. For an integer $d>0$, let $\FF_p^{<d}[X]$ denote the set of univariate polynomials over $\FF_p$ of degree strictly smaller than $d$. We write $[m]=\{1,\ldots,m\}$ and use uppercase letters for indeterminates (e.g., $X$) and lowercase letters for field elements (e.g., $x,r,z\in\FF_p$). All polynomial identities in this paper are over $\FF_p[X]$, and all exponents of group elements are interpreted modulo $p$.
 
-% \paragraph{Quotient Polynomial}
+\paragraph{Quotient Polynomials.}
+For $f(X)\in\FF_p[X]$ and $r,y\in\FF_p$, the polynomial remainder theorem implies
+\[
+    f(X)-y=(X-r)w(X)+(f(r)-y)
+\]
+for a unique quotient polynomial $w(X)\in\FF_p[X]$. Hence $(X-r)$ divides $f(X)-y$ if and only if $y=f(r)$, in which case
+\[
+    w(X)=\frac{f(X)-y}{X-r}
+\]
+is well-defined and satisfies $\deg(w)\le \deg(f)-1$. FoldAudit uses this divisibility relation as the algebraic statement certified by each per-file KZG witness.
 
-% TODO
-% \paragraph{Schwartz-Zippel Lemma}
-% The Schwartz-Zippel lemma is a fundamental probabilistic tool for bounding the likelihood that a non-zero polynomial evaluates to zero at a randomly chosen point. It serves as the mathematical cornerstone for the soundness guarantees of polynomial commitment schemes and probabilistic proof systems.
+\begin{lemma}[Schwartz--Zippel]\label{lem:schwartz_zippel}
+Let $P(X)\in\FF_p[X]$ be a non-zero polynomial of degree at most $d$. For uniformly sampled $\rho\leftarrow\FF_p$,
+\[
+    \Pr[P(\rho)=0]\le \frac{d}{p}.
+\]
+\end{lemma}
 
-% \begin{myLem}[Schwartz-Zippel Lemma~\cite{schwartz1980fast,zippel1979probabilistic}]
-% Let $\FF$ be a field, and let $P(X) \in \FF[X]$ be a non-zero polynomial of degree $d \geq 0$. Let $S \subseteq \FF$ be a finite subset. If $r$ is chosen uniformly at random from $S$, then
-% $$
-%     \Pr_{r \leftarrow S}[P(r) = 0] \leq \frac{d}{|S|}.
-% $$
-% \end{myLem}
+\begin{lemma}[Random Linear Folding]\label{lem:random_linear_folding}
+Let $\Delta_1,\ldots,\Delta_m\in\FF_p$ be field elements that are fixed before $\rho$ is sampled. If at least one $\Delta_i$ is non-zero and $\rho\leftarrow\FF_p$ is uniform, then
+\[
+    \Pr_\rho\!\left[\sum_{i=1}^m \rho^{i-1}\Delta_i=0\right]\le \frac{m-1}{p}.
+\]
+\end{lemma}
 
+\begin{proof}
+The folded error polynomial $P_\Delta(T)=\sum_{i=1}^m \Delta_iT^{i-1}$ is non-zero and has degree at most $m-1$. The claim follows immediately from Lemma~\ref{lem:schwartz_zippel}.
+\end{proof}
 
 
 
 \subsection{KZG Polynomial Commitment}
-We employ a KZG-type polynomial commitment scheme over a bilinear group tuple $(\GG_1, \GG_2, \GG_T, e)$ of prime order $p$. Here, $e: \GG_1 \times \GG_2 \to \GG_T$ is an efficiently computable, non-degenerate bilinear map. Let $g \in \GG_1$ and $h \in \GG_2$ be publicly known generators. 
+We use the Kate--Zaverucha--Goldberg (KZG) polynomial commitment scheme~\cite{Kate2010KZG} over bilinear groups $(\GG_1,\GG_2,\GG_T,e)$ of prime order $p$. The pairing $e:\GG_1\times\GG_2\rightarrow\GG_T$ is efficiently computable, bilinear, and non-degenerate. Let $g\in\GG_1$ and $h\in\GG_2$ be generators.
 
-A trusted setup generates a secret trapdoor $\tau \in \FF_p$ and publishes a structured reference string (SRS) supporting polynomials up to degree $s-1$:
-$$
-\SRS = \left( g, g^{\tau}, g^{\tau^2}, \dots, g^{\tau^{s-1}}, h, h^{\tau} \right).$$
-For a polynomial $f(X) = \sum_{k=0}^{s-1} a_k X^k \in \FF_p^{<s}[X]$, its commitment is computed in the exponent as
+\paragraph{Setup.}
+A setup algorithm samples a trapdoor $\tau\leftarrow\FF_p$ and publishes the KZG part of the SRS supporting degree-$<s$ polynomials:
+\[
+    \SRS=\left(g,g^\tau,\ldots,g^{\tau^{s-1}},h,h^\tau\right).
+\]
+The trapdoor $\tau$ must remain hidden from any prover after setup.
+
+\paragraph{Commitment.}
+For $f(X)=\sum_{k=0}^{s-1}a_kX^k\in\FF_p^{<s}[X]$, the KZG commitment is
 \begin{equation}\label{eq:kzg_commitment}
-    C_f := g^{f(\tau)} = \prod_{k=0}^{s-1} \left(g^{\tau^k}\right)^{a_k} \in \GG_1
-    % \footnote{Although the server in our application does not know \(\tau\), it can still evaluate \(C_f\) using the public parameters and polynomial coefficients. Most importantly, \(C_f\) coincides with the file chunk tag, making it the foundation of our provable data possession scheme.}
+    C_f := g^{f(\tau)}
+    =\prod_{k=0}^{s-1}\left(g^{\tau^k}\right)^{a_k}\in\GG_1 .
 \end{equation}
+The commitment is additively homomorphic in the exponent: for commitments $C_f$ and $C_q$ and scalars $\alpha,\beta\in\FF_p$, one has
+$
+C_f^\alpha C_q^\beta=g^{(\alpha f+\beta q)(\tau)}.
+$
 
-To prove an evaluation $f(z) = v$, the prover computes the quotient commitment $\pi := g^{w(\tau)}$ where $w(X) = (f(X) - v)/(X - z)$. The verifier checks the pairing equation
-\begin{equation}
-e\left(C_f \cdot g^{-v},\, h\right) \stackrel{?}{=} e\left(\pi,\, h^{\tau - z}\right),
+\paragraph{Opening and Verification.}
+To open $C_f$ at point $r\in\FF_p$ with value $y=f(r)$, the prover computes
+\[
+    w(X)=\frac{f(X)-y}{X-r},\qquad \pi=g^{w(\tau)} .
+\]
+The verifier accepts if
+\begin{equation}\label{eq:kzg_verify}
+    e(C_f g^{-y},h)
+    \stackrel{?}{=}
+    e(\pi,h^\tau h^{-r}).
 \end{equation}
-which holds if and only if $f(\tau) - v = (\tau - z)w(\tau)$ and $w(X)$ is the quotient polynomial. Under the $q$-SDH assumption~\cite{}, the scheme is evaluation-binding and knowledge-sound.
+Equation~\eqref{eq:kzg_verify} is equivalent, in the exponent, to
+$
+f(\tau)-y=(\tau-r)w(\tau).
+$
+Under the standard $q$-SDH assumption for the SRS degree bound, KZG commitments are computationally binding: a PPT adversary cannot open the same commitment at the same point to two distinct values, nor open it to a value inconsistent with the committed polynomial, except with negligible probability.
 
 
 \subsection{Multi-Polynomial Batch Evaluation (MPBE)}
 \label{sec:multi_poly_batch_evaluation}
-We present the algebraic foundation and the resulting interactive protocol for verifying multiple polynomial evaluations simultaneously.
+Batch verification in FoldAudit is based on random linear folding of multiple KZG quotient equations. Suppose the verifier must check $m$ claims $f_i(r_i)=y_i$ with commitments $b_i=g^{f_i(\tau)}$ and quotient commitments $C_{w_i}=g^{w_i(\tau)}$. The individual KZG relation for file $i$ can be written as
+\begin{equation}\label{eq:individual_kzg_relation}
+    e\!\left(b_i g^{-y_i} C_{w_i}^{r_i},h\right)
+    \stackrel{?}{=}
+    e(C_{w_i},h^\tau).
+\end{equation}
+Indeed, if $w_i(X)=(f_i(X)-y_i)/(X-r_i)$, then
+$
+b_i g^{-y_i}C_{w_i}^{r_i}=g^{\tau w_i(\tau)}.
+$
 
-\begin{lemma}[Zero Multiplicity Distance Lemma]\label{lem:zmdl}
-Consider pairs of polynomials $(f_1, v_1), \dots, (f_m, v_m) \in \FF_p[X]$, where the root sets $\text{zeros}(v_i) := \{z \in \FF_p \mid v_i(z)=0\}$ are pairwise disjoint. Define the rational function: 
-$$w(X) := \sum_{i=1}^m \frac{f_i(X)}{v_i(X)},$$ and let $k_1 := \max_i (\deg(f_i) - \deg(v_i))$ and $k_2 := \sum_i \deg(v_i)$. The \emph{Zero Multiplicity Distance Lemma} states that if the relative Hamming distance between $w$ and the space of degree-$\le k_1$ polynomials satisfies
+Verifying all equations in~\eqref{eq:individual_kzg_relation} separately would require $O(m)$ pairings. Instead, after all commitments are fixed, the verifier samples a Fiat--Shamir folding challenge $\rho\in\FF_p$ and checks a single folded equation:
+\begin{equation}\label{eq:folded_kzg_relation}
+    e\!\left(
+    \prod_{i=1}^m
+    \left(b_i g^{-y_i} C_{w_i}^{r_i}\right)^{\rho^{i-1}},
+    h\right)
+    \stackrel{?}{=}
+    e\!\left(
+    \prod_{i=1}^m C_{w_i}^{\rho^{i-1}},
+    h^\tau\right).
+\end{equation}
+If any individual equation has a non-zero exponent defect $\Delta_i$, then the folded equation can still hold only when $\sum_i\rho^{i-1}\Delta_i=0$, which occurs with probability at most $(m-1)/p$ by Lemma~\ref{lem:random_linear_folding}. This is the algebraic source of the batch soundness bound used in Theorem~\ref{thm:soundness}.
+
+FoldAudit masks each value $y_i$ as $\tilde y_i=y_i+\mu_i$, but it does not publish a checkable single-base commitment $g^{\mu_i}$. Publishing such a value would let a verifier enumerate low-entropy candidates $y'$ and test whether $g^{\tilde y_i-y'}=g^{\mu_i}$. Instead, FoldAudit commits to the mask with a statistically hiding Pedersen commitment and verifies the folded relation in zero knowledge.
+
+\subsection{Pedersen Mask Commitments}
+Let $u\in\GG_1$ be an independent generator whose discrete logarithm with respect to $g$ is unknown. We use $u$ as the Pedersen blinding base because $h$ is already reserved for the $\GG_2$ pairing generator. For each file $i$, the prover samples $\theta_i\leftarrow\FF_p$ and publishes
 \[
-\Delta\bigl(w, {\FF_p}_{\le k_1}[X]\bigr) \le 1 - \frac{k_1+k_2+1}{|\FF_p| - |Z|},
+    R_i=g^{\mu_i}u^{\theta_i}.
 \]
-where $Z := \bigcup_i \text{zeros}(v_i)$, then for every $i$, the zero multiplicities of $v_i$ are contained in those of $f_i$ (denoted $\text{zmult}(v_i) \sqsubseteq \text{zmult}(f_i)$). Intuitively, this means each denominator $v_i(X)$ must exactly divide its numerator $f_i(X)$ at all roots (counting multiplicity). If any division fails, $w(X)$ develops poles or non-polynomial behavior near the roots of $v_i$, forcing it to deviate significantly from any low-degree polynomial. Consequently, a single random evaluation of $w$ will detect such algebraic inconsistencies with high probability.
-\end{lemma}
+For any fixed $\mu_i$ and any commitment value $R_i$, the random blinding $\theta_i$ makes $R_i$ statistically independent of $\mu_i$. Consequently, the pair $(\tilde y_i,R_i)$ does not support the candidate test $R_i\stackrel{?}{=}g^{\tilde y_i-y'}$ that exists for the single-base commitment.
 
-
-
-\noindent\textbf{Application to Multi-Polynomial Batch Evaluation.}
-Lemma~\ref{lem:zmdl} provides a versatile algebraic backbone that naturally supports a two-level folding structure. Let $\rho_2 \in \FF_p$ compress multiple polynomials evaluated at the same point, and let $\rho_1 \in \FF_p$ fold quotient checks across distinct evaluation points. The general batch quotient-sum polynomial can be expressed as:
+Since $R_i$ contains the extra factor $u^{\theta_i}$, it cannot be substituted directly into the public pairing equation. FoldAudit therefore uses a batched zero-knowledge proof $\Pi_{\mathsf{pm}}$ for the following masked-opening relation:
 \[
-W(X) := \sum_{x \in S} \rho_1^{\text{idx}(x)-1} \left( \sum_{i=1}^{\ell_x} \rho_2^{i-1} \cdot \frac{p_{x,i}(X) - y_{x,i}}{X - x} \right),
+\begin{aligned}
+\mathcal{R}_{\mathsf{pm}}=\{&
+(\mathsf{stmt};\{\mu_i,\theta_i,\xi_i,w_i(X)\}_{i=1}^m),\ w_i\in\FF_p^{<s-1}[X]:\\
+&R_i=g^{\mu_i}u^{\theta_i}\ \forall i,\quad
+D_{w_i}=g^{w_i(\tau)}u^{\xi_i}\ \forall i,\\
+&\text{and, for }C_{w_i}=g^{w_i(\tau)},\\
+&e\!\left(
+\prod_{i=1}^m
+\left(b_i g^{\mu_i}g^{-\tilde y_i}C_{w_i}^{r_i}\right)^{\rho^{i-1}},h
+\right)
+=
+e\!\left(
+\prod_{i=1}^m C_{w_i}^{\rho^{i-1}},h^\tau
+\right)\}.
+\end{aligned}
 \]
-where $\text{idx}(x)$ maps each point $x$ to a unique batch index. This structure simultaneously handles intra-point polynomial compression (via $\rho_2$) and inter-point batch aggregation (via $\rho_1$).
+The public statement $\mathsf{stmt}$ contains $(\mathsf{chal},\{\Gamma_i\},\{b_i\},\{\tilde y_i\},\{R_i\},\{D_{w_i}\},\rho)$ and the authenticated tags fixed by the verifier. The witnesses $\{\mu_i,\theta_i,\xi_i,w_i(X)\}$, and in particular the values $g^{\mu_i}$ and $C_{w_i}=g^{w_i(\tau)}$, are not revealed. The commitments $D_{w_i}$ are fixed before $\rho$ is derived, so the prover cannot choose quotient witnesses after seeing the folding scalar.
 
-In our Batch-PDP scenario, however, each challenge point $r_i$ corresponds to exactly one aggregated file polynomial $f_i(X)$ (i.e., $\ell_{r_i} = 1$ for all $i \in [m]$). Consequently, the inner summation trivially collapses to a single term, rendering $\rho_2$ redundant. We retain only the cross-file folding scalar $\rho \coloneqq \rho_1$, which is cryptographically essential for preventing adversarial error cancellation across distinct files. The polynomial simplifies to:
+FoldAudit instantiates $\Pi_{\mathsf{pm}}$ with the following Fiat--Shamir Sigma protocol. Let $G_k=g^{\tau^k}$ for $0\le k\le s-2$, and write
+$
+w_i(X)=\sum_{k=0}^{s-2}d_{i,k}X^k.
+$
+The prover samples randomizers
+$
+\alpha_i,\beta_i,\gamma_i,\delta_{i,k}\leftarrow\FF_p
+$
+and computes
 \[
-W(X) := \sum_{i=1}^{m} \rho^{i-1} \cdot \frac{f_i(X) - y_i}{X - r_i}.
+    A_{R,i}=g^{\alpha_i}u^{\beta_i},
+    \qquad
+    A_{D,i}=\prod_{k=0}^{s-2}G_k^{\delta_{i,k}}u^{\gamma_i}.
 \]
-The verifier samples $z \in \FF_p \setminus \{r_i\}_{i=1}^m$ and accepts iff the evaluated sum matches the prover's committed opening $V_W=W(z)$. The consistency check directly instantiates Equation: $V_W \stackrel{?}{=} \sum_{i=1}^m \rho^{i-1} \frac{f_i(z) - y_i}{z - r_i}.$
-% We can infer that $k_2 =\sum_i \deg(v_i)=m$.
-By Lemma~\ref{lem:zmdl} if any claim $f_i(r_i) = y_i$ is false, $W(X)$ develops a pole at $r_i$ and deviates significantly from any degree-$(k_1-2)$ polynomial.
-% The proximity check at $z$ yields a soundness error of $\frac{s+m-1}{p-m}$, ensuring security while maintaining $O(1)$ pairing complexity for the verifier.
-
-% Application for Multi-Polynomial Batch Evaluation:
-% The Lemma~\ref{lem:zmdl} can be leveraged to verify $\ell_x$ polynomials $\{p_{x,i}(X)\}_{i=1}^{\ell_x}$ at each point $x$ in a set $S \subset \FF$ against claimed values $\{y_{x,i}\}$. The verifier first samples a random challenge $\rho \in \FF$ and sends it to the prover. The prover responds with a single polynomial $W(X)$ of degree at most $d-1$ (where $d := \max_{x,i} \deg(p_{x,i})$) defined as
-% % TODO
-% \[
-% W(X) := \sum_{x \in S} \sum_{i=1}^{\ell_x} \rho^{i-1} \cdot \frac{p_{x,i}(X) - y_{x,i}}{X - x}.
-% \]
-% The verifier samples $z \in \FF \setminus S$ and accepts iff $W(z)$ matches the right-hand side at $z$. Here, we set $w_x^{(\rho)}(X) := \sum_i \rho^{i-1}(p_{x,i}(X)-y_{x,i})$ and $v_x(X) := X-x$. 
-% Note that $\deg(w_x^{(\rho)}) \le d$ and $\deg(v_x)=1$, so the lemma's degree bound satisfies $k = \max_x(\deg(w_x^{(\rho)})-\deg(v_x)) \le d-1$. By the lemma, if any claim $p_{x,i}(x)=y_{x,i}$ is false, the target rational function will be far from any degree-$\le d-1$ polynomial unless $\rho$ accidentally cancels the error at $x$. Since the cancellation condition $w_x^{(\rho)}(x)=0$ is a non-zero univariate polynomial in $\rho$ of degree at most $\ell_x-1$, it holds for at most $\frac{\max_x \ell_x - 1}{|\FF|}$ fraction of challenges. The final proximity check at $z$ adds an error of $\frac{|S|+d}{|\FF|-|S|}$.
+It also computes the folded relation commitment
+\[
+\begin{aligned}
+P_1^0&=g^{\sum_i\rho^{i-1}\alpha_i}
+      \prod_{k=0}^{s-2}G_k^{\sum_i\rho^{i-1}r_i\delta_{i,k}},\\
+P_2^0&=\prod_{k=0}^{s-2}G_k^{\sum_i\rho^{i-1}\delta_{i,k}},\\
+A_F&=e(P_1^0,h)\cdot e(P_2^0,h^\tau)^{-1}.
+\end{aligned}
+\]
+The Fiat--Shamir challenge is
+\[
+    \chi=H_2(\mathsf{sigma\mbox{-}pm},\mathsf{stmt},\{A_{R,i},A_{D,i}\}_{i=1}^m,A_F).
+\]
+The responses are
+\[
+\begin{aligned}
+z_{\mu,i}&=\alpha_i+\chi\mu_i,&
+z_{\theta,i}&=\beta_i+\chi\theta_i,\\
+z_{\xi,i}&=\gamma_i+\chi\xi_i,&
+z_{i,k}&=\delta_{i,k}+\chi d_{i,k}.
+\end{aligned}
+\]
+The proof is
+\[
+    \Pi_{\mathsf{pm}}=
+    \left(A_F,\{A_{R,i},A_{D,i},z_{\mu,i},z_{\theta,i},z_{\xi,i},\{z_{i,k}\}_{k=0}^{s-2}\}_{i=1}^m\right).
+\]
+Verification recomputes $\chi$ and checks, for every $i$,
+\[
+    g^{z_{\mu,i}}u^{z_{\theta,i}}=A_{R,i}R_i^\chi,\qquad
+    \prod_{k=0}^{s-2}G_k^{z_{i,k}}u^{z_{\xi,i}}=A_{D,i}D_{w_i}^{\chi}.
+\]
+It then computes
+\[
+\begin{aligned}
+P_0&=\prod_i(b_i g^{-\tilde y_i})^{\rho^{i-1}},\\
+P_1&=g^{\sum_i\rho^{i-1}z_{\mu,i}}
+      \prod_{k=0}^{s-2}G_k^{\sum_i\rho^{i-1}r_i z_{i,k}},\\
+P_2&=\prod_{k=0}^{s-2}G_k^{\sum_i\rho^{i-1}z_{i,k}},
+\end{aligned}
+\]
+and accepts the folded relation iff
+\[
+    e(P_1P_0^\chi,h)=A_F\cdot e(P_2,h^\tau).
+\]
+This is a generalized Schnorr protocol for linear relations in the exponent; by the standard special-soundness and honest-verifier zero-knowledge properties, its Fiat--Shamir transform is knowledge-sound and zero-knowledge in the random oracle model.
 
 
 \subsection{Merkle Tree}
-A Merkle tree is a binary hash-based commitment structure that provides authenticated membership proofs for a set of values. Let $H_1: \{0,1\}^* \to \FF_p$ be a collision-resistant cryptographic hash function. For a sequence of $n$ data items $\{d_j\}_{j=1}^n$, the leaves are constructed as indexed hashes: $L_j := H_1(j \,\|\, d_j), j \in [n].$
-Internal nodes are recursively computed as $N_{k} = H_1(N_{2k} \,\|\, N_{2k+1})$ until a single root hash $\Gamma$ is obtained. The root $\Gamma$ uniquely commits to the entire dataset under the collision resistance of $H_1$.
-To prove that a value $d_j$ belongs to the committed set, the prover provides an \textit{authentication path} consisting of the sibling hashes along the route from leaf $L_j$ to the root. The verifier recomputes the root from the path and checks equality with the trusted root $\Gamma$.
-Apparently, each authentication path requires $\log n$ filed $\FF_p$ elements.
+A Merkle tree is a hash-based vector commitment that supports succinct membership authentication. Let $H_1:\{0,1\}^*\rightarrow\{0,1\}^{\lambda}$ be a collision-resistant hash function. FoldAudit uses domain-separated leaves that bind each authenticated tag to its file identifier and chunk index:
+\[
+    L_{i,j}=H_1(\mathsf{leaf}\|\mathsf{fid}_i\|j\|\mathsf{enc}(\sigma_{i,j})),\qquad j\in[n],
+\]
+where $\mathsf{fid}_i$ is a canonical file identifier and $\mathsf{enc}(\cdot)$ is an injective group-element encoding. The domain label, file identifier, and index prevent cross-file reuse and position-swapping attacks even when identical tags appear at different positions. Internal nodes are computed recursively with a separate domain label as
+$
+N=H_1(\mathsf{node}\|N_{\mathsf{left}}\|N_{\mathsf{right}})
+$
+until a root $\Gamma_i$ is obtained. A membership proof for $\sigma_{i,j}$ consists of the sibling nodes on the path from $L_{i,j}$ to $\Gamma_i$. Verification recomputes the root from $(\mathsf{fid}_i,j,\sigma_{i,j})$ and the path, and accepts only if it equals the trusted root. For a balanced binary tree, each authentication path contains $\lceil\log_2 n\rceil$ hash digests.
 
 
 \section{System Model and Security Model}
@@ -481,12 +593,12 @@ A \textbf{tag} is used to represent the \(j\)-th chunk through a KZG polynomial 
 \paragraph{Protocol Workflow}
 The provable data possession scheme for multiple files operates through five polynomial-time algorithms:
 \begin{itemize}
-    \item $\Setup(\lambda) \to \mathsf{pp}$: Generates public parameters $\mathsf{pp}$, including bilinear group tuples $(\GG_1, \GG_2, \GG_T, e)$, a structured reference string (SRS) for degree $s-1$, and cryptographic hash functions $H_1$ (for Merkle Tree) and $H_2, H_2$ (for Fiat-Shamir transcript hashing).
-    \item $\Store(\{F_i\}_{i=1}^m) \to (\mathsf{data}, \mathsf{meta})$: The DO encodes each chunk into $f_{i,j}(X)$, computes tags $\sigma_{i,j}$, constructs the Merkle Tree to obtain the root hash $\Gamma_i$ for each file, and outsources $\{F_i, \{\sigma_{i,j}\}, \text{Merkle trees}\}$ to the CS. The DO securely records $\{\Gamma_i\}_{i=1}^m$ and shares them with V.
-    \item $\Chal(m,n,c) \to \mathsf{chal}$: The verifier samples a shared challenge index set $J \subseteq [n]$ with $|J| = c$, random aggregation coefficients $\{v_{i,j}\}_{i\in[m], j \in J} \leftarrow \FF_p$, and per-file evaluation points $\{r_i\}_{i=1}^m \leftarrow \FF_p$. For brevity, we omit the index \(i\) in \(v_{i,j}\) and simply write \(v_j\) to denote \(v_{i,j}\). The challenge is $\mathsf{chal} = (J, \{v_j\}, \{r_i\}, nonce)$, where $nonce$ is a random value to resist replay attack.
+    \item $\Setup(\lambda) \to \mathsf{pp}$: Generates public parameters $\mathsf{pp}$, including bilinear group tuples $(\GG_1, \GG_2, \GG_T, e)$, independent Pedersen bases $(g,u)$ in $\GG_1$, a structured reference string (SRS) for degree $s-1$, and cryptographic hash functions $H_1$ (for Merkle Tree construction) and $H_2$ (for Fiat-Shamir transcript hashing).
+    \item $\Store(\{F_i\}_{i=1}^m) \to (\mathsf{data}, \mathsf{meta})$: The DO encodes each chunk into $f_{i,j}(X)$, computes tags $\sigma_{i,j}$, constructs the indexed Merkle Tree over $L_{i,j}=H_1(\mathsf{leaf}\|\mathsf{fid}_i\|j\|\mathsf{enc}(\sigma_{i,j}))$ to obtain the root hash $\Gamma_i$ for each file, and outsources $\{F_i, \{\sigma_{i,j}\}, \text{Merkle trees}\}$ to the CS. The DO securely records $\{\Gamma_i\}_{i=1}^m$ and shares them with V.
+    \item $\Chal(m,n,c) \to \mathsf{chal}$: The verifier samples a shared challenge index set $J \subseteq [n]$ with $|J| = c$, random aggregation coefficients $\{v_{i,j}\}_{i\in[m], j \in J} \leftarrow \FF_p$, and per-file evaluation points $\{r_i\}_{i=1}^m \leftarrow \FF_p$. The challenge is $\mathsf{chal} = (J, \{v_{i,j}\}_{i\in[m],j\in J}, \{r_i\}, nonce)$, where $nonce$ is a random value to resist replay attack.
     \item $\ProofGen(\mathsf{chal}, \mathsf{data}, \mathsf{meta}) \to \pi$: The CS aggregates challenged chunks $J$ and outputs the corresponding non-interactive proofs $\pi$.
     \item $\Verify(\mathsf{chal}, \pi, \{\Gamma_i\}, \mathsf{pp}) \to \{accept, reject\}$: V validates the integrity of all files $[m]$ via the proofs $\pi$.
-    % The verifier requires only a constant number of pairings (4, or 2 with random batching) independent of $m$.
+    % The verifier checks the batched masked-opening proof rather than a public mask-opening equation.
 \end{itemize}
 
 % TODO 进一步补充PDP需要实现的安全性质
@@ -500,7 +612,7 @@ The security of the proposed batch-PDP scheme is formalized through three core p
 Let $\mathcal{A}$ be a probabilistic polynomial-time (PPT) adversary controlling the CS. $\mathcal{A}$ wins the soundness game if it can produce a proof $\pi$ that causes $\Verify$ to output $accept$ for a challenge involving corrupted, modified, or unavailable data chunks with non-negligible probability. 
 
 \textbf{Privacy against Honest-but-Curious Verifier}:
-Given the public audit transcript and the generated proof $\pi$, a PPT verifier cannot recover the challenged evaluations $\{y_i = f_i(r_i)\}_{i=1}^m$ or the underlying raw data sectors with non-negligible advantage. 
+Given the public audit transcript and the generated proof $\pi$, a PPT verifier cannot recover challenged evaluations $\{y_i = f_i(r_i)\}_{i=1}^m$ or the underlying raw data sectors with non-negligible advantage, even when the evaluation domain is small enough to enumerate.
 
 
 \section{Proposed Scheme}
@@ -509,18 +621,18 @@ Given the public audit transcript and the generated proof $\pi$, a PPT verifier 
 \subsection{Construction}
 
 \paragraph{\textbf{Setup}} 
-The $\Setup$ algorithm initializes the cryptographic environment and publishes the system-wide public parameters $\mathsf{pp}$. It first generates a bilinear group tuple $(\GG_1, \GG_2, \GG_T, e)$ of prime order $p$, selects public generators $g \in \GG_1$ and $h \in \GG_2$, and samples a secret trapdoor $\tau \in \FF_p$. Using $\tau$, the algorithm constructs the structured reference string (SRS) $(g, g^{\tau}, \dots, g^{\tau^{s-1}}, h, h^{\tau})$, which supports polynomial commitments of degree strictly less than $s$. Cryptographic hash functions are fixed: $H_1$ for Merkle Tree construction, and $H_2$ for Fiat-Shamir transcript binding. Finally, $\mathsf{pp} = (\GG_1, \GG_2, \GG_T, e, p, g, h, \mathsf{SRS}, H_1, H_2)$ is published. Note that each DO has its own trapdoor $\tau$ to enable batch of polynomials and guarantee privacy of DO's files. 
+The $\Setup$ algorithm initializes the cryptographic environment and publishes the system-wide public parameters $\mathsf{pp}$. It first generates a bilinear group tuple $(\GG_1, \GG_2, \GG_T, e)$ of prime order $p$, selects public generators $g,u \in \GG_1$ with unknown $\log_g u$, selects $h \in \GG_2$, and samples a secret trapdoor $\tau \in \FF_p$. Using $\tau$, the algorithm constructs the structured reference string (SRS) $(g,u, g^{\tau}, \dots, g^{\tau^{s-1}}, h, h^{\tau})$, which supports polynomial commitments of degree strictly less than $s$ and Pedersen mask commitments. Cryptographic hash functions are fixed: $H_1$ for Merkle Tree construction, and $H_2$ for Fiat-Shamir transcript binding. Finally, $\mathsf{pp} = (\GG_1, \GG_2, \GG_T, e, p, g, u, h, \mathsf{SRS}, H_1, H_2)$ is published. Note that each DO has its own trapdoor $\tau$ to enable batch of polynomials and guarantee privacy of DO's files.
 % This trusted setup ensures that all subsequent polynomial commitments are evaluation-binding and knowledge-sound under standard hardness assumptions.
 \begin{algorithm}[h]
 \caption{$\Setup$}
 \begin{algorithmic}[1]
 \Require security parameter $\lambda$
 \Ensure public parameters $pp$
-\State Generate $(\GG_1,\GG_2,\GG_T,e,p,g,h)$ and $\SRS=\left(g,g^\tau,\ldots,g^{\tau^{s-1}},h,h^\tau\right)$.
+\State Generate $(\GG_1,\GG_2,\GG_T,e,p,g,u,h)$ and $\SRS=\left(g,u,g^\tau,\ldots,g^{\tau^{s-1}},h,h^\tau\right)$.
 \State Fix cryptographic hashes $H_1, H_2$.
 \State Publish
 $
-pp=(\GG_1,\GG_2,\GG_T,e,p,g,h,\SRS, H_1,H_2).
+pp=(\GG_1,\GG_2,\GG_T,e,p,g,u,h,\SRS, H_1,H_2).
 $
 \end{algorithmic}
 \end{algorithm}
@@ -528,7 +640,7 @@ $
 
 \paragraph{\textbf{Files Storing}}
 The $\Store$ algorithm handles data preprocessing, cryptographic tagging, and metadata generation for outsourcing. For each file $F_i$ ($i \in [m]$), the Data Owner parses every chunk $j \in [n]$ into $s$ field elements and algebraically encodes them as a polynomial $f_{i,j}(X) = \sum_{k=0}^{s-1} m_{i,j,k} X^k$. A KZG homomorphic tag $\sigma_{i,j} = g^{f_{i,j}(\tau)} \in \GG_1$ is computed for each chunk, providing a compact cryptographic binding to the underlying data sectors. Note that \(\tau\) is chosen and known by the data owner, so the computation of tag \(\sigma_{i,j}\) can be performed in constant time. 
-Then, these tags are organized as leaves in a Merkle Tree with root $\Gamma_i$. The tree roots $\{\Gamma_i\}$ are securely retained by the DO (and later shared with the Verifier), while the raw data and tags are outsourced to the CS. This structure guarantees both data integrity and index authenticity without requiring the DO to maintain local copies.
+Then, each tag is encoded as a domain-separated Merkle leaf $L_{i,j}=H_1(\mathsf{leaf}\|\mathsf{fid}_i\|j\|\mathsf{enc}(\sigma_{i,j}))$, and the leaves are organized into a Merkle Tree with root $\Gamma_i$. The tree roots $\{\Gamma_i\}$ are securely retained by the DO (and later shared with the Verifier), while the raw data and tags are outsourced to the CS. This structure guarantees both data integrity and index authenticity without requiring the DO to maintain local copies.
 
 \begin{algorithm}[h]
 \caption{$\Store$}
@@ -540,9 +652,9 @@ Then, these tags are organized as leaves in a Merkle Tree with root $\Gamma_i$. 
   \For{$j=1$ to $n$}
     \State Parse chunk $j$ into $s$ sectors and form $f_{i,j}(X)$.
     \State Compute tag $\sigma_{i,j}=g^{f_{i,j}(\tau)}$.
-    % \State $L_{i,j} = H_1(i \,\|\, j \,\|\, \sigma_{i,j})$
+    \State $L_{i,j}\gets H_1(\mathsf{leaf}\|\mathsf{fid}_i\|j\|\mathsf{enc}(\sigma_{i,j}))$.
   \EndFor
-  \State Build the $i$th Merkle Tree over leaves $\{\sigma_{i,j}\}_{j=1}^n$.
+  \State Build the $i$th Merkle Tree over leaves $\{L_{i,j}\}_{j=1}^n$.
   \State Obtain root $\Gamma_i$.
 \EndFor
 \State DO sends $(F_i,\{\sigma_{i,j}\})$ to CS and records $\{\Gamma_i\}$ for V.
@@ -550,7 +662,7 @@ Then, these tags are organized as leaves in a Merkle Tree with root $\Gamma_i$. 
 \end{algorithm}
 
 \paragraph{\textbf{Challenge Generation}}
-The $\mathsf{Chal}$ algorithm initiates the audit by sampling a challenge tuple $\mathsf{chal} = (J, \{v_j\}_{j \in J}, \{r_i\}_{i=1}^m)$. An index set $J \subseteq [n]$ of size $c$ for each file is selected to query the chunk positions. Random coefficients $\{v_j\}$ (which is short for $v_{i,j}$) are drawn uniformly from $\FF_p$ to enable random linear aggregation of challenged chunks; this masks individual chunk values, prevents targeted corruption, and enables homomorphic tag recombination. Additionally, independent per-file evaluation points $\{r_i\}$ are sampled to support file-specific quotient consistency checks. The challenge is transmitted to the CS alongside a fresh $nonce$ to prevent replay or precomputation attacks.
+The $\mathsf{Chal}$ algorithm initiates the audit by sampling a challenge tuple $\mathsf{chal} = (J, \{v_{i,j}\}_{i\in[m],j\in J}, \{r_i\}_{i=1}^m,\mathsf{nonce})$. An index set $J \subseteq [n]$ of size $c$ is selected and applied to every audited file. Independent coefficients $\{v_{i,j}\}$ are drawn uniformly from $\FF_p$ to randomize each file's linear aggregation and prevent targeted corruption. Independent per-file evaluation points $\{r_i\}$ are sampled to support file-specific quotient checks, while a fresh $\mathsf{nonce}$ prevents replay and precomputation attacks.
 \begin{algorithm}[h]
 \caption{$\Chal$}
 \label{alg:chal}
@@ -558,14 +670,14 @@ The $\mathsf{Chal}$ algorithm initiates the audit by sampling a challenge tuple 
 \Require parameters $(m,n,c)$
 \Ensure challenge $\mathsf{chal}$
 \State Sample one shared challenged index set $J\subseteq[n]$, $|J|=c$.
-\State Sample random $\{v_j \xleftarrow{\$}\FF_p\}_{j\in J}$.
+\State Sample random $\{v_{i,j} \xleftarrow{\$}\FF_p\}_{i\in[m],j\in J}$.
 \State Sample random $\{r_i \xleftarrow{\$}\FF_p\}_{i=1}^m$
 % \For{$i=1$ to $m$}
 %   \State Sample $r_i\xleftarrow{\$}\FF_p$.
 % \EndFor
 \State Set
 $
-\mathsf{chal}=(J,\{v_j\}_{j\in J}, \{r_i\}_{i=1}^m, nonce).
+\mathsf{chal}=(J,\{v_{i,j}\}_{i\in[m],j\in J}, \{r_i\}_{i=1}^m, nonce).
 $
 \end{algorithmic}
 \end{algorithm}
@@ -575,32 +687,48 @@ $
 
 \paragraph{\textbf{Proof Generation}}
 
-Upon receiving the challenge $\mathsf{chal}=(J,\{v_j\}_{j\in J},\{r_i\}_{i=1}^m,\mathsf{nonce})$, the $\ProofGen$ algorithm by the CS computes a compact, cross-file aggregated proof. 
+Upon receiving $\mathsf{chal}=(J,\{v_{i,j}\}_{i\in[m],j\in J},\{r_i\}_{i=1}^m,\mathsf{nonce})$, the CS executes $\ProofGen$ independently for each audited file and outputs a fixed proof transcript. The proof contains authenticated challenged tags, one masked evaluation, one Pedersen mask commitment, one aggregated tag per file, and a batched zero-knowledge proof $\Pi_{\mathsf{pm}}$ that binds the hidden masks to the folded KZG quotient relation.
 
 
 \begin{algorithm}[H]
 \caption{\textbf{$\ProofGen$}}
 \label{alg:proofgen}
 \begin{algorithmic}[1]
-\Require challenge $\mathsf{chal}=(J,\{v_{i,j}\}_{i\in[m],j\in J},\{r_i\}_{i=1}^m,\mathsf{nonce})$, files $\{F_i\}_{i=1}^m$, tags $\{\sigma_{i,j}\}$
+\Require challenge $\mathsf{chal}=(J,\{v_{i,j}\}_{i\in[m],j\in J},\{r_i\}_{i=1}^m,\mathsf{nonce})$, files $\{F_i\}_{i=1}^m$, tags $\{\sigma_{i,j}\}$, SRS
 \Ensure proof $\pi$
 \For{$i=1$ to $m$}
     \Statex {{\color{gray}Step 1: Per-File Tag Authentication Paths Building}}
-    \State Build Merkle paths $\mathsf{Auth}_i$ for $\{\sigma_{i,j}\}_{j\in J}$ with respect to $\Gamma_i$
+    \State Build Merkle paths $\mathsf{Auth}_i$ for the leaves $L_{i,j}=H_1(\mathsf{leaf}\|\mathsf{fid}_i\|j\|\mathsf{enc}(\sigma_{i,j}))$, $j\in J$, with respect to $\Gamma_i$
     
     \Statex {{\color{gray}Step 2: Per-File Polynomial Aggregation and Masked Quotient Commitment}}
-    \State $f_i(X) \gets \sum_{j\in J} v_{i,j} f_{i,j}(X)$
-    \State $b_i \gets \prod_{j\in J} \sigma_{i,j}^{v_{i,j}}$
+    \State $f_i(X) \gets \sum_{j\in J} v_{i,j} f_{i,j}(X)=\sum_{k=0}^{s-1} a_{i,k}X^k$
+    \State $b_i \gets g^{f_i(\tau)}=\prod_{k=0}^{s-1}(g^{\tau^k})^{a_{i,k}}$
     \State $y_i \gets f_i(r_i)$
     \State Sample $\mu_i \xleftarrow{\$} \FF_p$
+    \State Sample $\theta_i \xleftarrow{\$} \FF_p$
     \State $\tilde{y}_i \gets y_i+\mu_i$
-    \State $R_i \gets g^{\mu_i}$
-    \State $w_i(X) \gets \frac{f_i(X)-y_i}{X-r_i}$ \Comment{Polynomial division over $\FF_p$}
-    \State $C_{w_i} \gets g^{w_i(\tau)}$
+    \State $R_i \gets g^{\mu_i}u^{\theta_i}$
+    \State $w_i(X) \gets \frac{f_i(X)-y_i}{X-r_i}=\sum_{k=0}^{s-2}d_{i,k}X^k$ \Comment{Polynomial division over $\FF_p$}
+    \State Sample $\xi_i \xleftarrow{\$}\FF_p$ and set $D_{w_i}\gets g^{w_i(\tau)}u^{\xi_i}$
 \EndFor
 
-\Statex {{\color{gray}Step 3: Fiat-Shamir Folding Challenge}}
-\State $\rho \gets H_2\!\left(\mathsf{chal},\{\Gamma_i\}_{i=1}^m,\{b_i\}_{i=1}^m,\{\tilde{y}_i\}_{i=1}^m,\{R_i\}_{i=1}^m,\{C_{w_i}\}_{i=1}^m\right)$
+\Statex {{\color{gray}Step 3: Fiat-Shamir Sigma Proof}}
+\State $\rho \gets H_2(\mathsf{fold},\mathsf{chal},\{\Gamma_i\}_{i=1}^m,\{b_i\}_{i=1}^m,\{\tilde y_i\}_{i=1}^m,\{R_i\}_{i=1}^m,\{D_{w_i}\}_{i=1}^m)$
+\State $\mathsf{stmt}\gets(\mathsf{chal},\{\Gamma_i\},\{b_i\},\{\tilde y_i\},\{R_i\},\{D_{w_i}\},\rho)$
+\For{$i=1$ to $m$}
+    \State Sample $\alpha_i,\beta_i,\gamma_i,\{\delta_{i,k}\}_{k=0}^{s-2}\xleftarrow{\$}\FF_p$
+    \State $A_{R,i}\gets g^{\alpha_i}u^{\beta_i}$
+    \State $A_{D,i}\gets \prod_{k=0}^{s-2}(g^{\tau^k})^{\delta_{i,k}}u^{\gamma_i}$
+\EndFor
+\State $P_1^0\gets g^{\sum_i\rho^{i-1}\alpha_i}\prod_{k=0}^{s-2}(g^{\tau^k})^{\sum_i\rho^{i-1}r_i\delta_{i,k}}$
+\State $P_2^0\gets \prod_{k=0}^{s-2}(g^{\tau^k})^{\sum_i\rho^{i-1}\delta_{i,k}}$
+\State $A_F\gets e(P_1^0,h)\cdot e(P_2^0,h^\tau)^{-1}$
+\State $\chi\gets H_2(\mathsf{sigma\mbox{-}pm},\mathsf{stmt},\{A_{R,i},A_{D,i}\}_{i=1}^m,A_F)$
+\For{$i=1$ to $m$}
+    \State $z_{\mu,i}\gets \alpha_i+\chi\mu_i$, $z_{\theta,i}\gets \beta_i+\chi\theta_i$, $z_{\xi,i}\gets \gamma_i+\chi\xi_i$
+    \State $z_{i,k}\gets \delta_{i,k}+\chi d_{i,k}$ for all $0\le k\le s-2$
+\EndFor
+\State $\Pi_{\mathsf{pm}}\gets\left(A_F,\{A_{R,i},A_{D,i},z_{\mu,i},z_{\theta,i},z_{\xi,i},\{z_{i,k}\}_{k=0}^{s-2}\}_{i=1}^m\right)$
 
 \Statex {{\color{gray}Step 4: Output Proof}}
 \State \Return
@@ -608,8 +736,8 @@ Upon receiving the challenge $\mathsf{chal}=(J,\{v_j\}_{j\in J},\{r_i\}_{i=1}^m,
 \pi=
 \left(
 \left\{
-\mathsf{Auth}_i,\tilde{y}_i,R_i,C_{w_i},b_i,\{\sigma_{i,j}\}_{j\in J}
-\right\}_{i=1}^m
+\mathsf{Auth}_i,\tilde{y}_i,R_i,D_{w_i},b_i,\{\sigma_{i,j}\}_{j\in J}
+\right\}_{i=1}^m,\Pi_{\mathsf{pm}}
 \right).
 \]
 \end{algorithmic}
@@ -619,20 +747,31 @@ Upon receiving the challenge $\mathsf{chal}=(J,\{v_j\}_{j\in J},\{r_i\}_{i=1}^m,
 
 
 \begin{enumerate}
-% TODO b_i
-    \item \textit{Step 1: Per-File Tag Authentication Paths Building.} For For each file $i \in [m]$, constructs the Merkle paths $\mathsf{Auth}_i$ using the tags $\{\sigma_{i,j}\}_{j\in J}$.
-    \item \textit{Step 2: Per-File Polynomial Aggregation and Quotient Commitment with Privacy Masking.} For each file $i \in [m]$, the CS homomorphically aggregates the challenged chunks into a single polynomial $f_i(X) = \sum_{j \in J} v_j f_{i,j}(X)$. It evaluates $f_i$ at the per-file challenge point $r_i$ to obtain $y_i = f_i(r_i)$. To prevent leakage of $y_i$ to an honest-but-curious verifier, the CS samples a fresh mask $\mu_i \leftarrow \FF_p$, computes the masked evaluation $\tilde{y}_i = y_i + \mu_i$, and commits to the mask as $R_i = g^{\mu_i}$. Subsequently, it constructs the per-file quotient polynomial $w_i(X) = \frac{f_i(X) - y_i}{X - r_i}$. Since $f_i(r_i) = y_i$, $w_i(X)$ is a well-defined polynomial of degree at most $s-2$. The CS commits to it as $C_{w_i} = g^{w_i(\tau)}$. 
-    
-    \item \textit{Step 3: Cross-File Quotient Folding and Masked Batch Evaluation.} Further, $b$ the challenged cross-file tags are combined as $b=g^{{\sum_{i=1}^m} f_i(\tau)}$, where the sum polynomial $\sum_{i=1}^m f_i(X)$ can be evaluated.
-    To compress $m$ independent quotient checks into a single constant-size verification, the CS derives a folding scalar $\rho \leftarrow H_2(\cdots, ``1")$. This binding ensures $\rho$ is unpredictable and fixed after all per-file quotient commitments are published. The CS then constructs the batch quotient-sum polynomial $W(X) = \sum_{i=1}^m \rho^{i-1} w_i(X)$. Then, the CS samples a random evaluation point $z \leftarrow H_2(\dots,``2")$. It evaluates each aggregated file polynomial at $z$ as $v_{i,z} = f_i(z)$, applies per-file masks $\nu_i \leftarrow \FF_p$ to obtain $\tilde{v}_{i,z} = v_{i,z} + \nu_i$ with commitments $S_i = g^{\nu_i}$, and applies a global mask $\eta \leftarrow \FF_p$ to $V_W = W(z)$ to yield $\tilde{V}_W = V_W + \eta$ with commitment $R_W = g^\eta$. 
-    
-    \item \textit{Step 4: Random Evaluation \& KZG Opening and Masking.} Finally, the CS computes the KZG opening proof $\pi_{\mathsf{batch}} = g^{\phi(\tau)}$ for $\phi(X) = \frac{W(X) - V_W}{X - z}$ and outputs the complete proof $\pi = (\{\mathsf{Auth}_i,$ $\tilde{y}_i,$ $R_i, C_{w_i}, \{\sigma_{i,j}\}_{j\in J}\}_{i=1}^m, b, \tilde{V}_W, R_W,$ $\pi_{\mathsf{batch}}, \{\tilde{v}_{i,z}, S_i\}_{i=1}^m)$.
+    \item \textit{Step 1: Per-File Tag Authentication Paths Building.} For each file $i \in [m]$, the CS collects the challenged tags $\{\sigma_{i,j}\}_{j\in J}$ and builds Merkle authentication paths for the bound leaves $L_{i,j}=H_1(\mathsf{leaf}\|\mathsf{fid}_i\|j\|\mathsf{enc}(\sigma_{i,j}))$ with respect to the root $\Gamma_i$.
+    \item \textit{Step 2: Per-File Aggregation and Masked Evaluation.} The CS aggregates the challenged chunks into
+    $
+    f_i(X)=\sum_{j\in J} v_{i,j}f_{i,j}(X)
+    $
+    and computes the aggregate commitment directly from the coefficient vector of $f_i(X)$:
+    $
+    b_i=g^{f_i(\tau)}=\prod_{k=0}^{s-1}(g^{\tau^k})^{a_{i,k}},
+    $
+    where $f_i(X)=\sum_{k=0}^{s-1}a_{i,k}X^k$. This avoids exponentiating the $c$ challenged tags in proof generation; the equality $b_i=\prod_{j\in J}\sigma_{i,j}^{v_{i,j}}$ is enforced later by the verifier. It then evaluates $y_i=f_i(r_i)$, samples fresh $\mu_i,\theta_i\leftarrow\FF_p$, outputs the masked value $\tilde{y}_i=y_i+\mu_i$, and commits to the mask with the Pedersen commitment $R_i=g^{\mu_i}u^{\theta_i}$.
+    \item \textit{Step 3: Per-File Quotient Witnesses and Batched Masked Opening.} Since $y_i=f_i(r_i)$, the polynomial $f_i(X)-y_i$ is divisible by $X-r_i$. The CS computes
+    $
+    w_i(X)=\frac{f_i(X)-y_i}{X-r_i}
+    $
+    with $\deg(w_i)\le s-2$, samples $\xi_i\leftarrow\FF_p$, and publishes the hiding quotient commitment $D_{w_i}=g^{w_i(\tau)}u^{\xi_i}$. The Fiat-Shamir scalar $\rho$ is derived after all $D_{w_i}$ are fixed and is used inside the batched masked-opening proof. No value equivalent to $g^{\mu_i}$ or the unblinded quotient commitment $g^{w_i(\tau)}$ is published.
+    \item \textit{Step 4: Output.} The proof is exactly
+    $
+    \pi=\left(\left\{\mathsf{Auth}_i,\tilde{y}_i,R_i,D_{w_i},b_i,\{\sigma_{i,j}\}_{j\in J}\right\}_{i=1}^m,\Pi_{\mathsf{pm}}\right).
+    $
 \end{enumerate}
 
 
 \paragraph{\textbf{Verification}}
 
-The $\Verify$ algorithm validates the proof through a sequence of deterministic checks that require only a constant number of pairings, independent of the batch size $m$. 
+The $\Verify$ algorithm validates index authenticity, tag aggregation, transcript binding, and quotient consistency. The quotient consistency check is performed by verifying $\Pi_{\mathsf{pm}}$, which proves the folded masked KZG relation without exposing the mask exponents.
 
 
 \begin{algorithm}[t]
@@ -647,14 +786,14 @@ The $\Verify$ algorithm validates the proof through a sequence of deterministic 
 \pi=
 \left(
 \left\{
-\mathsf{Auth}_i,\tilde{y}_i,R_i,C_{w_i},b_i,\{\sigma_{i,j}\}_{j\in J}
-\right\}_{i=1}^m
+\mathsf{Auth}_i,\tilde{y}_i,R_i,D_{w_i},b_i,\{\sigma_{i,j}\}_{j\in J}
+\right\}_{i=1}^m,\Pi_{\mathsf{pm}}
 \right).
 \]
 
 \Statex {{\color{gray}Step 1: Tag Authentication}}
 \For{$i=1$ to $m$}
-    \State Verify $\mathsf{Auth}_i$ against $\Gamma_i$ for the leaves $\{\sigma_{i,j}\}_{j\in J}$
+    \State Verify $\mathsf{Auth}_i$ against $\Gamma_i$ for the leaves $L_{i,j}=H_1(\mathsf{leaf}\|\mathsf{fid}_i\|j\|\mathsf{enc}(\sigma_{i,j}))$, $j\in J$
     \If{verification fails}
         \State \Return $\mathsf{reject}$
     \EndIf
@@ -669,21 +808,24 @@ The $\Verify$ algorithm validates the proof through a sequence of deterministic 
 \EndFor
 
 \Statex {{\color{gray}Step 3: Fiat-Shamir Folding Challenge}}
-\State $\rho \gets H_2\!\left(\mathsf{chal},\{\Gamma_i\}_{i=1}^m,\{b_i\}_{i=1}^m,\{\tilde{y}_i\}_{i=1}^m,\{R_i\}_{i=1}^m,\{C_{w_i}\}_{i=1}^m\right)$
+\State $\rho \gets H_2(\mathsf{fold},\mathsf{chal},\{\Gamma_i\}_{i=1}^m,\{b_i\}_{i=1}^m,\{\tilde{y}_i\}_{i=1}^m,\{R_i\}_{i=1}^m,\{D_{w_i}\}_{i=1}^m)$
+\State $\mathsf{stmt}\gets(\mathsf{chal},\{\Gamma_i\},\{b_i\},\{\tilde y_i\},\{R_i\},\{D_{w_i}\},\rho)$
 
-\Statex {{\color{gray}Step 4: Folded KZG Binding Verification}}
-\State 
-$L \gets
-\prod_{i=1}^m
-\left(
-b_i \cdot R_i \cdot g^{-\tilde{y}_i} \cdot C_{w_i}^{r_i}
-\right)^{\rho^{i-1}}.$
-\State Compute
-$
-R \gets
-\prod_{i=1}^m C_{w_i}^{\rho^{i-1}}.
-$
-\If{$e(L,h)\neq e(R,h^\tau)$}
+\Statex {{\color{gray}Step 4: Sigma Proof Verification}}
+\State Parse $\Pi_{\mathsf{pm}}$ as $\left(A_F,\{A_{R,i},A_{D,i},z_{\mu,i},z_{\theta,i},z_{\xi,i},\{z_{i,k}\}_{k=0}^{s-2}\}_{i=1}^m\right)$
+\State $\chi\gets H_2(\mathsf{sigma\mbox{-}pm},\mathsf{stmt},\{A_{R,i},A_{D,i}\}_{i=1}^m,A_F)$
+\For{$i=1$ to $m$}
+    \If{$g^{z_{\mu,i}}u^{z_{\theta,i}}\neq A_{R,i}R_i^\chi$}
+        \State \Return $\mathsf{reject}$
+    \EndIf
+    \If{$\prod_{k=0}^{s-2}(g^{\tau^k})^{z_{i,k}}u^{z_{\xi,i}}\neq A_{D,i}D_{w_i}^{\chi}$}
+        \State \Return $\mathsf{reject}$
+    \EndIf
+\EndFor
+\State $P_0\gets\prod_i(b_i g^{-\tilde y_i})^{\rho^{i-1}}$
+\State $P_1\gets g^{\sum_i\rho^{i-1}z_{\mu,i}}\prod_{k=0}^{s-2}(g^{\tau^k})^{\sum_i\rho^{i-1}r_i z_{i,k}}$
+\State $P_2\gets\prod_{k=0}^{s-2}(g^{\tau^k})^{\sum_i\rho^{i-1}z_{i,k}}$
+\If{$e(P_1P_0^\chi,h)\neq A_F\cdot e(P_2,h^\tau)$}
     \State \Return $\mathsf{reject}$
 \EndIf
 
@@ -693,28 +835,21 @@ $
 
 
 \begin{enumerate}
-    \item \textit{Step 1: Tag Authentication.} The verifier first validates each $\mathsf{Auth}_i$ against the trusted root $\Gamma_i$ to guarantee index authenticity under the collision resistance of $H_1$. 
-    % TODO b_i
-    \item \textit{Step 2: Tag Consistency Pre-checks.} The verifier then recomputes the aggregated tag $\prod_{j \in J} \sigma_{i,j}^{v_j}$ and rejects if the result is not equal to $b$, cryptographically binding the tags to the legitimate challenged polynomials. 
-
-    \item \textit{Step 3: Cross-File Quotient Folding Commitment and Batch KZG Opening Verification.} Next, the verifier independently derives $\rho$ and $z$ via $H_2$. It computes the batch commitment $C_W = \prod_{i=1}^m C_{w_i}^{\rho^{i-1}}$.
-    To verify that $W(X)$ is indeed a low-degree polynomial committing to $V_W$, the verifier checks the KZG opening equation with statistical masks: $e\left(C_W \cdot g^{-\tilde{V}_W} \cdot R_W \cdot \pi_{\mathsf{batch}}^z, h\right) \stackrel{?}{=} e\left(\pi_{\mathsf{batch}}, h^\tau\right).$ This pairing check certifies that $W(\tau) - \tilde{V}_W + \eta = (\tau - z) \phi(\tau)$, ensuring algebraic consistency of the folded quotient-sum.
-    
-    \item \textit{Step 4: Cross-File Evaluation Consistency.} 
-    Instead of verifying each per-file quotient $w_i(X)$ individually, the verifier enforces the folded consistency relation across all files via a single scalar equation in $\mathbb{G}_1$. The target algebraic identity (in the exponent) is $V_W \stackrel{?}{=} \sum_{i=1}^m \rho^{i-1} \frac{v_{i,z} - y_i}{z - r_i}$, where $v_{i,z} = f_i(z)$, $y_i = f_i(r_i)$, and $V_W = W(z)$. To preserve privacy against an honest-but-curious verifier, all field elements are statistically masked: $\tilde{y}_i = y_i + \mu_i$, $\tilde{v}_{i,z} = v_{i,z} + \nu_i$, and $\tilde{V}_W = V_W + \eta$, with corresponding commitments $R_i = g^{\mu_i}$, $S_i = g^{\nu_i}$, and $R_W = g^\eta$.
-The verifier translates the masked identity into a group equality by isolating all committed masks on one side and all masked evaluations on the other. Specifically, it computes:
-\begin{align}
-\mathsf{LHS} \coloneqq& g^{\tilde{V}_W} \cdot R_W^{-1} \cdot \prod_{i=1}^m \left( g^{\tilde{y}_i} \cdot g^{-\tilde{v}_{i,z}} \right)^{\frac{\rho^{i-1}}{z - r_i}} \notag\\
-=&g^{\tilde{V}_W} \cdot R_W^{-1} \cdot g^{-\sum_{i=1}^m \frac{\rho^{i-1}(\tilde{v}_{i,z} - \tilde{y}_i)}{z - r_i}}\notag\\
-\mathsf{RHS} \coloneqq& \prod_{i=1}^m \left( R_i \cdot S_i^{-1} \right)^{\frac{\rho^{i-1}}{z - r_i}}.\notag
-\end{align}
-The verifier accepts iff $\mathsf{LHS} \stackrel{?}{=} \mathsf{RHS}$.
-By Lemma~\ref{lem:zmdl}, successful validation implies that all per-file quotients $w_i(X)$ are algebraically valid, rendering bias or pole-cancellation attacks impossible.
-% with probability at most $\frac{s+m-1}{p} + \mathsf{negl}(\lambda)$. 
+    \item \textit{Step 1: Tag Authentication.} For every file, the verifier checks $\mathsf{Auth}_i$ against the trusted Merkle root $\Gamma_i$ for the challenged leaves $L_{i,j}=H_1(\mathsf{leaf}\|\mathsf{fid}_i\|j\|\mathsf{enc}(\sigma_{i,j}))$. This prevents the CS from substituting tags across files or chunk positions.
+    \item \textit{Step 2: Per-File Tag Consistency.} The verifier recomputes
+    $
+    \hat{b}_i=\prod_{j\in J}\sigma_{i,j}^{v_{i,j}}
+    $
+    and rejects unless $\hat{b}_i=b_i$ for every $i\in[m]$. Hence each $b_i$ is forced to be the homomorphic commitment to the challenged aggregate polynomial $f_i(X)$.
+    \item \textit{Step 3: Fiat--Shamir Folding Challenge.} The verifier derives
+    $
+    \rho=H_2(\mathsf{fold},\mathsf{chal},\{\Gamma_i\},\{b_i\},\{\tilde{y}_i\},\{R_i\},\{D_{w_i}\})
+    $
+    after all public proof components have been parsed. Since $\rho$ is bound to the fixed transcript, the prover cannot adapt the quotient witnesses to the folding coefficient.
+    \item \textit{Step 4: Pedersen Masked-Opening Proof Verification.} The verifier checks $\Pi_{\mathsf{pm}}$ for $\mathcal{R}_{\mathsf{pm}}$. Acceptance means that the prover knows masks and Pedersen blindings satisfying $R_i=g^{\mu_i}u^{\theta_i}$, hiding quotient openings satisfying $D_{w_i}=g^{w_i(\tau)}u^{\xi_i}$, and quotient witnesses $w_i(X)$ satisfying the folded KZG relation for the hidden values $y_i=\tilde y_i-\mu_i$. Thus the verifier learns no checkable group element of the form $g^{\mu_i}$.
 \end{enumerate}
 If all checks pass, the verifier outputs $accept$; otherwise, it outputs $reject$.
 % If all checks pass, the verifier outputs $accept$; otherwise, it outputs $reject$. Successful validation guarantees that all challenged data across $m$ files are intact, correctly indexed, and unmodified, with soundness strictly bounded.
-% by the algebraic guarantees of Lemma~\ref{lem:zmdl}.
 
 
 
@@ -723,189 +858,156 @@ If all checks pass, the verifier outputs $accept$; otherwise, it outputs $reject
 
 
 \subsection{Security Analysis}
-We formally establish the correctness, soundness, and privacy of the proposed batch-PDP scheme. The security analysis relies on the following standard cryptographic assumptions:
+We establish correctness, soundness, and privacy for the protocol described in Algorithms~\ref{alg:store}--\ref{alg:verify}. All adversaries considered below are probabilistic polynomial-time (PPT) algorithms in the security parameter $\lambda$. A function $\varepsilon(\lambda)$ is negligible if it is smaller than $1/\lambda^c$ for every constant $c>0$ and all sufficiently large $\lambda$. The analysis relies on the following assumptions.
 
-\begin{assumption}[Collision-Resistant Hash]\label{ass:hash}
-The hash functions $H_1$ (for Merkle tree construction) and $H_2$ (for Fiat--Shamir transcript binding) are collision-resistant. No PPT adversary can find distinct inputs $x \neq x'$ such that $H_1(x) = H_1(x')$ or $H_2(x) = H_2(x')$ with non-negligible probability.
+\begin{assumption}[Collision Resistance of $H_1$]\label{ass:hash}
+The Merkle-tree hash function $H_1:\{0,1\}^*\rightarrow\{0,1\}^{\lambda}$ is collision-resistant. Namely, for every PPT adversary $\mathcal{A}$,
+\[
+    \Pr\!\left[
+    x\neq x' \land H_1(x)=H_1(x')
+    : (x,x')\leftarrow\mathcal{A}(1^\lambda)
+    \right]\le \mathsf{negl}(\lambda).
+\]
+Consequently, a PPT adversary cannot produce two distinct tag-index sets that authenticate to the same Merkle root except with negligible probability.
 \end{assumption}
 
-\begin{assumption}[KZG Knowledge Soundness]\label{ass:kzg_soundness}
-The KZG polynomial commitment scheme over $(\mathbb{G}_1, \mathbb{G}_2, \mathbb{G}_T, e)$ is evaluation-binding and knowledge-sound under the $q$-SDH assumption. Specifically, for any PPT adversary producing a valid opening proof $\pi$ for commitment $C = g^{f(\tau)}$ at point $z$ with value $v$, there exists a PPT extractor that outputs the unique polynomial $f(X) \in \FF_{<s}[X]$ satisfying $f(z) = v$.
+\begin{assumption}[Fiat--Shamir Random Oracle]\label{ass:random_oracle}
+The transcript hash $H_2$ is modeled as a programmable random oracle with domain separation for masked-opening proofs and proof folding. In particular, once the tuple $(\mathsf{chal},\{\Gamma_i\},\{b_i\},\{\tilde y_i\},\{R_i\},\{D_{w_i}\})$ is fixed, the value
+\[
+    \rho=H_2(\mathsf{fold},\mathsf{chal},\{\Gamma_i\},\{b_i\},\{\tilde y_i\},\{R_i\},\{D_{w_i}\})
+\]
+is distributed uniformly over $\FF_p$ from the adversary's perspective, except with negligible probability.
+\end{assumption}
+
+\begin{assumption}[KZG Binding and Knowledge Soundness]\label{ass:kzg_soundness}
+For the SRS degree bound $q\ge s-1$, the $q$-SDH assumption holds in the bilinear group tuple $(\GG_1,\GG_2,\GG_T,e)$. Equivalently for our use, the KZG scheme instantiated with the KZG SRS $(g,g^\tau,\ldots,g^{\tau^q},h,h^\tau)$ is computationally evaluation-binding and knowledge-sound: for every PPT adversary that outputs $(C,r,y,\pi)$ satisfying the KZG verification equation, there exists an extractor that recovers a degree-$\le q$ polynomial $f(X)$ such that $C=g^{f(\tau)}$ and $f(r)=y$, except with negligible probability. In particular, no PPT adversary can open a fixed commitment at a fixed point to an incorrect or second distinct value with non-negligible probability.
 \end{assumption}
 
 \begin{assumption}[Discrete Logarithm Hardness]\label{ass:discrete_log}
-The discrete logarithm problem in $\mathbb{G}_1$ is computationally intractable. Given $g \in \mathbb{G}_1$ and $Y = g^y$, no PPT adversary can recover $y \in \FF_p$ with non-negligible advantage.
+The discrete logarithm problem is hard in $\GG_1$. That is, for every PPT adversary $\mathcal{A}$,
+\[
+    \Pr\!\left[y'=y:
+    y\leftarrow\FF_p,\; Y=g^y,\; y'\leftarrow\mathcal{A}(g,Y)
+    \right]\le \mathsf{negl}(\lambda).
+\]
+This assumption is used for computational binding of Pedersen commitments and for the standard hardness of extracting committed exponents.
 \end{assumption}
 
-% \begin{theorem}[Correctness]
-% If the Data Owner, Cloud Server, and Verifier execute the protocol honestly, then $\mathsf{Verify}$ outputs $\mathsf{accept}$ with probability $1$.
-% \end{theorem}
+\begin{assumption}[Pedersen Binding]\label{ass:pedersen_binding}
+The discrete logarithm $\log_g u$ is unknown to every PPT adversary. Consequently, Pedersen commitments $g^a u^b$ are perfectly hiding and computationally binding under the discrete logarithm assumption in $\GG_1$.
+\end{assumption}
+
+\begin{assumption}[Masked-Opening Sigma Soundness]\label{ass:mask_opening}
+The Fiat--Shamir Sigma proof $\Pi_{\mathsf{pm}}$ used in Algorithms~\ref{alg:proofgen} and~\ref{alg:verify} is knowledge-sound and zero-knowledge for the relation $\mathcal{R}_{\mathsf{pm}}$ in the random oracle model. Equivalently, any PPT prover that makes the Sigma verification equations in Algorithm~\ref{alg:verify} accept admits an extractor that outputs witnesses $\{\mu_i,\theta_i,\xi_i,w_i(X)\}_{i=1}^m$ satisfying $R_i=g^{\mu_i}u^{\theta_i}$, $D_{w_i}=g^{w_i(\tau)}u^{\xi_i}$, and the folded masked KZG quotient relation, except with negligible probability.
+\end{assumption}
 
 \begin{theorem}[Correctness]\label{thm:correctness}
 If the Data Owner, Cloud Server, and Verifier execute Algorithms~\ref{alg:store},~\ref{alg:chal},~\ref{alg:proofgen}, and~\ref{alg:verify} honestly, then $\Verify$ outputs $accept$ with probability $1$.
 \end{theorem}
 
-
-
-\begin{proof} For each file $i \in [m]$, the server aggregates the challenged chunks into $f_i(X) = \sum_{j \in J} v_j f_{i,j}(X)$ and computes $y_i = f_i(r_i)$. By construction, $f_i(r_i) - y_i = 0$, so $(X - r_i)$ divides $f_i(X) - y_i$ exactly. Thus, the per-file quotient $w_i(X) = \frac{f_i(X) - y_i}{X - r_i}$ is a well-defined polynomial over $\FF_p$ with $\deg(w_i) \leq s-2$. The batch quotient-sum polynomial $W(X) = \sum_{i=1}^m \rho^{i-1} w_i(X)$ consequently satisfies $\deg(W) \leq s-2$, ensuring all associated commitments lie within the SRS degree bound.
-
-\noindent\textit{Step 1: Tag Authentication.} The Merkle authentication paths $\mathsf{Auth}_i$ are constructed honestly from the leaves $\{\sigma_{i,j}\}_{j \in J}$, so they verify against the trusted root $\Gamma_i$ with probability 1 under the collision resistance of $H_1$. 
-
-\noindent\textit{Step 2: Tag Consistency Pre-checks.} 
-For tag recombination, the verifier verifies:
-\begin{align}
-b=&\prod_{i=1}^m g^{f_i(\tau)} =\prod_{i=1}^m g^{\sum_{j\in J} v_{i,j} f_{i,j}(\tau)}\notag\\
-=& \prod_{j \in J} \left(g^{f_{i,j}(\tau)}\right)^{v_j} =\prod_{i=1}^m \prod_{j \in J} \sigma_{i,j}^{v_j}=g^{f_i(\tau)}.    \notag
-\end{align}
-
-\noindent\textit{Step 3: Cross-File Quotient Folding Commitment and Batch KZG Opening Verification.} 
-% The verifier computes the batch commitment $C_W = \prod_{i=1}^m C_{w_i}^{\rho^{i-1}}$, with random value $\rho\gets H_2(\cdots,``1")$. Then, it samples $z \leftarrow H_2(\dots,``2")$ and obtains $z \neq {r_i}$ for $\forall i$. 
-KZG batch proof for quotient folding polynomial $W(X)$ is $\pi_{\text{batch}} = g^{\frac{W(\tau) - V_W}{\tau - z}}$, where $V_W = W(z)$. Fresh one-time masks are applied: $\tilde{V}_W = V_W + \eta$ and $R_W = g^{\eta}$. Substituting these into the pairing check yields:
-\begin{align}
-&e(C_W \cdot g^{-\tilde{V}_W} \cdot R_W \cdot \pi_{\text{batch}}^z, h)     \notag\\
-= &e(g^{W(\tau)} \cdot g^{-(V_W + \eta)} \cdot g^{\eta} \cdot g^{z \cdot \frac{W(\tau) - V_W}{\tau - z}}, h) \notag\\
-=&e(g^{W(\tau) - V_W - \eta + \eta + z \cdot \frac{W(\tau) - V_W}{\tau - z}}, h )\notag\\
-=&e(g^{(W(\tau) - V_W)\!(1 + \frac{z}{\tau - z})},h) \notag\\
-= &e(g^{(W(\tau) - V_W) \frac{\tau}{\tau - z}},h).\notag\\
-= &e(\pi_{\text{batch}}, h^{\tau})\notag
-\end{align}
-% By bilinearity, the left-hand side equals $e\!\left(g^{\frac{W(\tau) - V_W}{\tau - z}}, h^{\tau}\right) = e(\pi_{\text{batch}}, h^{\tau})$, which matches the right-hand side. Thus, the pairing equation holds perfectly.
-
-\noindent\textit{Step 4: Cross-File Evaluation Consistency.} The verifier checks the scalar relation:
-\begin{align}
-    \mathsf{LHS} 
-    =& g^{\tilde{V}_W} \cdot R_W^{-1} \cdot g^{-\sum_{i=1}^m \frac{\rho^{i-1}(\tilde{v}_{i,z} - \tilde{y}_i)}{z - r_i}} \notag\\
-    =& g^{V_W + \eta} \cdot g^{-\eta} \cdot g^{-\sum_{i=1}^m \frac{\rho^{i-1}\big((v_{i,z} + \nu_i) - (y_i + \mu_i)\big)}{z - r_i}} 
-    \notag\\
-    =& g^{V_W} \cdot g^{-\sum_{i=1}^m \frac{\rho^{i-1}(v_{i,z} - y_i)}{z - r_i}} \cdot g^{\sum_{i=1}^m \frac{\rho^{i-1}(\mu_i - \nu_i)}{z - r_i}} \notag\\
-    =& \left( g^{V_W - \sum_{i=1}^m \frac{\rho^{i-1}(v_{i,z} - y_i)}{z - r_i}} \right) 
-    \cdot \left( \prod_{i=1}^m g^{(\mu_i -\nu_i)\frac{\rho^{i-1}}{z - r_i}} \right)  \notag\\
-    =& g^{V_W - V_W} \cdot \left( \prod_{i=1}^m (R_i\cdot S_i^{-1})^{\frac{\rho^{i-1}}{z - r_i}} \right)\notag\\
-    % =& 1 \cdot \left( \prod_{i=1}^m R_i^{\frac{\rho^{i-1}}{z - r_i}} \right) \cdot \left( \prod_{i=1}^m S_i^{-\frac{\rho^{i-1}}{z - r_i}} \right) \notag\\
-    =& \mathsf{RHS} \notag
-\end{align}
-
-
-Since all verification checks (Merkle authentication, tag combination, KZG batch opening, and cross-file consistency) are satisfied with probability 1 under honest execution, the $\Verify$ algorithm outputs $accept$.
-\end{proof}
-
-
-\begin{theorem}[Soundness]
-Let $\mathcal{A}$ be a PPT adversary controlling the Cloud Server. Under Assumptions~\ref{ass:hash}--\ref{ass:discrete_log} and modeling $H_2$ as a random oracle, if $\mathcal{A}$ outputs a proof $\pi$ that causes \textsf{Verify} to accept for a challenge involving corrupted or unavailable data, then $\mathcal{A}$ succeeds with probability at most $\frac{s+m-1}{p-m} + \text{negl}(\lambda)$.
-\end{theorem}
-% TODO whole check
 \begin{proof}
-We prove soundness via a sequence of hybrid games. Let $\mathsf{Win}_k$ denote the event that the PPT adversary $\mathcal{A}$ controlling the Cloud Server causes $\mathsf{Verify}$ to accept for a challenge involving corrupted or unavailable data in Game $k$.
-
-\textit{Game 0: Real Soundness Game.} Identical to the real protocol execution. By definition, $\Pr[\mathsf{Win}_0] = \epsilon$.
-
-\textit{Game 1: Index Authenticity \& Tag Binding.} The challenger strictly enforces Merkle path verification against the trusted roots $\{\Gamma_i\}_{i=1}^m$ and verifies the tag recombination $\prod_{j\in J} \sigma_{i,j}^{v_j} \stackrel{?}{=} b_i$. The Merkle verification relies solely on the collision resistance of $H_1$. The tag binding relies on the homomorphic property of KZG commitments and the discrete logarithm assumption in $\mathbb{G}_1$. Any successful deviation by $\mathcal{A}$ implies breaking $H_1$ or forging a KZG tag, both of which occur with negligible probability. Thus, $|\Pr[\mathsf{Win}_0] - \Pr[\mathsf{Win}_1]| \le \mathsf{negl}(\lambda)$.
-
-\textit{Game 2: Quotient-Consistency Enforcement.} Identical to Game 1, except the challenger strictly enforces the batch KZG opening verification equation from Algorithm~\ref{alg:verify}, Step 2.
-% Specifically, after recomputing the folded quotient commitment $C_W = \prod_{i=1}^m C_{w_i}^{\rho^{i-1}}$, the challenger verifies the pairing equality: $
-% e\!\left(C_W \cdot g^{-\tilde{V}_W} \cdot R_W \cdot \pi_{\text{batch}}^z,\; h\right) \stackrel{?}{=} e\!\left(\pi_{\text{batch}},\; h^\tau\right).$
-% By the non-degeneracy of the bilinear map $e(\cdot,\cdot)$, this equality holds in $G_T$ if and only if the underlying exponents in $G_1$ satisfy: $W(\tau) - \tilde{V}_W + \eta + z\cdot\phi(\tau) = \tau\cdot\phi(\tau).$
-% Substituting the protocol definitions $\tilde{V}_W = V_W + \eta$ and $R_W = g^{\eta}$, the relation simplifies algebraically to:
-% $
-% W(\tau) - V_W = (\tau - z)\phi(\tau).
-% $
-Under Assumption~\ref{ass:kzg_soundness} and Assumption~\ref{ass:discrete_log}, a PPT adversary cannot produce a valid proof tuple $(C_W, \tilde{V}_W, R_W, \pi_{\text{batch}})$ that passes this pairing check unless the committed polynomial $W(X)$ and its claimed evaluation $V_W$ are cryptographically bound to a well-defined quotient structure. Concretely, the check forces the existence of polynomials $\{w_i(X)\}_{i=1}^m$ such that $W(X) = \sum_{i=1}^m \rho^{i-1} w_i(X)$ and $w_i(\tau) = (f_i(\tau) - y_i)/(\tau - r_i)$ for all $i \in [m]$. 
-Any adversary that succeeds in Game 1 but fails in Game 2 must have generated a proof that bypasses the tag/Merkle checks yet violates the KZG opening relation. Constructing such a proof implies either forging a valid KZG evaluation binding or solving the discrete logarithm problem in $\GG_1$, both of which occur with negligible probability. Therefore, the transition between games is statistically indistinguishable to any PPT adversary:
+For each file $i\in[m]$, the honest CS computes
 $
-\left|\Pr[\text{Win}_1] - \Pr[\text{Win}_2]\right| \le \text{negl}(\lambda).
+f_i(X)=\sum_{j\in J}v_{i,j}f_{i,j}(X)
 $
+and $y_i=f_i(r_i)$. Hence $X-r_i$ divides $f_i(X)-y_i$, and
+$
+w_i(X)=\frac{f_i(X)-y_i}{X-r_i}
+$
+is a polynomial of degree at most $s-2$.
 
-
-
-\textit{Game 3: Folded Evaluation Consistency Enforcement.}
-Identical to Game 2, except the challenger explicitly verifies the algebraic identity 
+The Merkle paths $\mathsf{Auth}_i$ are generated from the challenged bound leaves $L_{i,j}=H_1(\mathsf{leaf}\|\mathsf{fid}_i\|j\|\mathsf{enc}(\sigma_{i,j}))$, so Step 1 of $\Verify$ accepts. For Step 2,
 \[
-V_W \stackrel{?}{=} \sum_{i=1}^m \rho^{i-1} \frac{f_i(z) - y_i}{z - r_i}
+\hat b_i=\prod_{j\in J}\sigma_{i,j}^{v_{i,j}}
+=\prod_{j\in J}\left(g^{f_{i,j}(\tau)}\right)^{v_{i,j}}
+=g^{f_i(\tau)}
+=b_i .
 \]
-at the random oracle-derived point $z \in \mathbb{F}_p \setminus \{r_i\}_{i=1}^m$. 
-By Assumption~\ref{ass:kzg_soundness}, a PPT extractor $\mathcal{E}$ can retrieve a unique polynomial 
-$\hat{W}(X) \in \mathbb{F}_p^{\leq s-2}[X]$ such that $C_W = g^{\hat{W}(\tau)}$ and $\hat{W}(z) = V_W$.
-The adversary $\mathcal{A}$ wins in Game 2 but loses in Game 3 only if it forges a proof where 
-$\hat{W}(z) = h(z)$ for a corrupted file $i^*$ satisfying $f_{i^*}(r_{i^*}) \neq y_{i^*}$, where we define the rational function
-\[
-h(X) := \sum_{i=1}^m \rho^{i-1} \frac{f_i(X) - y_i}{X - r_i}.
-\]
-Mapping to the notation of Lemma~\ref{lem:zmdl}, set $u_i(X) \leftarrow f_i(X) - y_i$ and $v_i(X) \leftarrow X - r_i$. 
-The denominator roots $Z := \bigcup_{i=1}^m \text{zeros}(v_i) = \{r_1, \dots, r_m\}$ are pairwise disjoint with $|Z| = m$. 
-We have $k_1 := \max_i (\deg(u_i) - \deg(v_i)) = s-2$ and $k_2 := \sum_{i=1}^m \deg(v_i) = m$. 
-Since $(X - r_{i^*}) \nmid u_{i^*}(X)$, the zero-multiplicity condition $z\text{mult}(v_{i^*}) \sqsubseteq z\text{mult}(u_{i^*})$ is violated.
-By the contrapositive of Lemma~\ref{lem:zmdl}, $h(X)$ is algebraically far from any polynomial in $\mathbb{F}_p^{\leq s-2}[X]$. 
-Consequently, the probability that a uniformly random $z \in \mathbb{F}_p \setminus Z$ (sampled after commitments are fixed) satisfies $h(z) = \hat{W}(z)$ is bounded by the agreement set size:
-\begin{align}
-\Pr_{z} \big[ h(z) = \hat{W}(z) \big] \leq \frac{k_1 + k_2 + 1}{p - |Z|} = &\frac{(s-2) + m + 1}{p - m} \notag \\
-= &\frac{s + m - 1}{p - m}.\notag 
-\end{align}
-Therefore, the game transition satisfies $\left| \Pr[\text{Win}_2] - \Pr[\text{Win}_3] \right| \leq \frac{s + m - 1}{p - m}$.
-% In Game 3, $\mathcal{A}$ can only succeed by breaking the random oracle property or KZG knowledge-soundness, both of which occur with negligible probability, i.e., $\Pr[\text{Win}_3] \leq \text{negl}(\lambda)$.
-
-Combining all game transitions yields
-\[
-\epsilon \le \frac{s+m-1}{p-m} + \mathsf{negl}(\lambda),
-\]
-which completes the proof.
+The Pedersen commitments satisfy $R_i=g^{\mu_i}u^{\theta_i}$ and $D_{w_i}=g^{w_i(\tau)}u^{\xi_i}$ by construction. Let $C_{w_i}=g^{w_i(\tau)}$ denote the unblinded quotient commitment used only inside the proof witness. For the folded masked relation, the honest witnesses satisfy
+\begin{align*}
+b_ig^{\mu_i}g^{-\tilde y_i}C_{w_i}^{r_i}
+&=g^{f_i(\tau)}g^{\mu_i}g^{-(y_i+\mu_i)}g^{r_iw_i(\tau)}\\
+&=g^{f_i(\tau)-y_i+r_iw_i(\tau)}
+=g^{\tau w_i(\tau)} .
+\end{align*}
+Therefore the folded KZG equation inside $\mathcal{R}_{\mathsf{pm}}$ holds, and the concrete Sigma verification equations in Algorithm~\ref{alg:verify} accept by completeness. Thus every verification step accepts.
 \end{proof}
 
-
-\begin{theorem}[Privacy against Honest-but-Curious Verifier]
-Under Assumption~\ref{ass:discrete_log} and assuming that the masking scalars $\{\mu_i\}_{i=1}^m$, $\{\nu_i\}_{i=1}^m$, and $\eta$ are freshly and uniformly sampled from $\FF_p$ in each audit round, no PPT honest-but-curious verifier can recover the challenged evaluations $\{y_i = f_i(r_i)\}_{i=1}^m$ or the underlying raw data sectors $\{m_{i,j,k}\}$ from the audit transcript and proof $\pi$ with non-negligible advantage.
+\begin{theorem}[Soundness]\label{thm:soundness}
+Let $\mathcal{A}$ be a PPT adversary controlling the CS. Under Assumptions~\ref{ass:hash}--\ref{ass:mask_opening}, if a challenge touches corrupted, modified, or unavailable chunks, then $\mathcal{A}$ causes $\Verify$ to accept without possessing the challenged aggregate data with probability at most
+\[
+\frac{m-1}{p}+\mathsf{negl}(\lambda).
+\]
 \end{theorem}
 
 \begin{proof}
-We prove privacy via a standard simulation-based argument. We construct a probabilistic polynomial-time (PPT) simulator $\mathcal{S}$ that, given only the public parameters $\mathsf{pp}$, the Merkle roots $\{\Gamma_i\}_{i=1}^m$, and the challenge $\mathsf{chal}$, generates a simulated proof $\pi_{\mathsf{sim}}$ that is computationally indistinguishable from a real proof $\pi$ generated by an honest cloud server. If such a simulator exists, the verifier's view reveals no information about the underlying data beyond the public challenge.
+Merkle verification binds each challenged tag $\sigma_{i,j}$ to $(\mathsf{fid}_i,j,\Gamma_i)$ except with negligible probability under Assumption~\ref{ass:hash}. The tag-consistency step then forces
+$
+b_i=\prod_{j\in J}\sigma_{i,j}^{v_{i,j}}=g^{f_i(\tau)}
+$
+for the authenticated aggregate polynomial $f_i(X)$.
 
-Let the real transcript be $\mathcal{T} = (\mathsf{chal}, \pi,$ $\{\Gamma_i\}_{i=1}^m)$, where $\pi$ contains the tuple $(\{\mathsf{Auth}_i, b_i, \tilde{y}_i, R_i, C_{w_i},$ $\{\sigma_{i,j}\}_{j \in J}\}_{i=1}^m,$ $\tilde{V}_W, R_W,$ $\pi_{\mathsf{batch}}, \{\tilde{v}_{i,z}, S_i\}_{i=1}^m)$.
-
-The simulator $\mathcal{S}$ proceeds as follows:
-\begin{enumerate}
-    \item $\mathcal{S}$ copies the public structural elements identically: the challenge $\mathsf{chal}$, the Merkle authentication paths $\{\mathsf{Auth}_i\}_{i=1}^m$, the aggregated tags $\{b_i\}_{i=1}^m$, the per-file and global commitments $\{C_{w_i}\}$, and the individual challenged tags $\{\sigma_{i,j}\}$. These values are either public, deterministically derived from public parameters, or cryptographically bound to file/chunk indices; they do not leak raw sector values without solving the discrete logarithm or breaking the collision resistance of $H_1$.
-    \item For each file $i \in [m]$, $\mathcal{S}$ samples $\tilde{y}_i' \leftarrow \FF_p$, $\tilde{v}_{i,z}' \leftarrow \FF_p$, and $\tilde{V}_W' \leftarrow \FF_p$ uniformly at random.
-    \item For each $i \in [m]$, $\mathcal{S}$ samples independent random group elements $R_i', S_i' \leftarrow \mathbb{G}_1$ and $R_W' \leftarrow \mathbb{G}_1$.
-    \item $\mathcal{S}$ samples a random group element $\pi_{\mathsf{batch}}' \leftarrow \mathbb{G}_1$.
-    \item $\mathcal{S}$ assembles $\pi_{\mathsf{sim}}$ using the components above and outputs $(\mathsf{chal}, \pi_{\mathsf{sim}}, \{\Gamma_i\}_{i=1}^m)$.
-\end{enumerate}
-
-We now establish the indistinguishability between $\mathcal{T}$ and $\mathcal{T}_{\mathsf{sim}}$ through the following properties:
-\begin{itemize}
-    \item \textit{Statistical Hiding of Evaluations.} In the real protocol, the masked evaluations are computed as $\tilde{y}_i = y_i + \mu_i$, $\tilde{v}_{i,z} = f_i(z) + \nu_i$, and $\tilde{V}_W = V_W + \eta$, where $\mu_i, \nu_i, \eta \leftarrow \FF_p$ are freshly sampled uniform random scalars. By the one-time pad property, each masked value is statistically uniformly distributed over $\FF_p$ and independent of the underlying true values $y_i$, $f_i(z)$, and $V_W$. Consequently, the simulator's random choices $\tilde{y}_i', \tilde{v}_{i,z}', \tilde{V}_W'$ are identically distributed to the real values, yielding perfect statistical hiding: $I(y_i; \tilde{y}_i) = 0$.
-    \item \textit{Computational Hiding of Mask Scalars.} The real masking commitments are $R_i = g^{\mu_i}$, $S_i = g^{\nu_i}$, and $R_W = g^{\eta}$. Under Assumption~\ref{ass:discrete_log}, no PPT adversary can recover the exponents $\mu_i, \nu_i, \eta$ from these group elements with non-negligible probability. Since the simulated commitments $R_i', S_i', R_W'$ are uniformly random elements in $\mathbb{G}_1$, they are computationally indistinguishable from the real commitments under the discrete logarithm assumption.
-    \item \textit{Hiding of Polynomial Commitments.} The KZG commitments $\{C_{w_i}\}$, and the opening proof $\pi_{\mathsf{batch}}$ are computed over the public SRS without revealing the trapdoor $\tau$. By the construction of the KZG scheme, these commitments are perfectly hiding with respect to the polynomial coefficients. They only certify algebraic consistency at the queried points (which are already statistically masked). Without knowledge of $\tau$ or the underlying polynomials, these group elements leak zero information about the raw sector coefficients $\{m_{i,j,k}\}$ or the evaluation claims.
-\end{itemize}
-
-Combining the above, the joint distribution of the field elements in $\pi$ is statistically independent of the underlying data, while the group elements are computationally indistinguishable from random under Assumption~\ref{ass:discrete_log}. Therefore, the real transcript $\mathcal{T}$ and the simulated transcript $\mathcal{T}_{\mathsf{sim}}$ are computationally indistinguishable for any PPT honest-but-curious verifier. It follows that
+By Assumption~\ref{ass:mask_opening}, any accepting $\Pi_{\mathsf{pm}}$ yields witnesses $\{\mu_i,\theta_i,\xi_i,w_i(X)\}_{i=1}^m$ satisfying $R_i=g^{\mu_i}u^{\theta_i}$ and $D_{w_i}=g^{w_i(\tau)}u^{\xi_i}$. Let $C_{w_i}=g^{w_i(\tau)}$ and $y_i=\tilde y_i-\mu_i$. Since $D_{w_i}$ is fixed before $\rho$ is sampled, the extracted quotient commitments are fixed before $\rho$ except with negligible probability under Assumptions~\ref{ass:random_oracle} and~\ref{ass:pedersen_binding}. If the masked-opening proof accepts, then the folded relation enforces
 \[
-\Pr[\mathcal{V} \text{ recovers } \{y_i\} \text{ or } \{m_{i,j,k}\} \mid \mathcal{T}] \leq \mathsf{negl}(\lambda),
+\sum_{i=1}^m \rho^{i-1}
+\left(f_i(\tau)-y_i-(\tau-r_i)w_i(\tau)\right)=0 .
 \]
-which completes the proof.
+For each file define the opening defect
+\[
+\Delta_i=f_i(\tau)-y_i-(\tau-r_i)w_i(\tau).
+\]
+If every $\Delta_i=0$, then each $C_{w_i}$ is a valid KZG witness opening $b_i$ at $r_i$ to $y_i$. Producing such witnesses for corrupted or unavailable challenged data without the corresponding aggregate polynomial violates KZG knowledge soundness except with negligible probability.
+
+Otherwise, at least one $\Delta_i$ is nonzero. By Assumption~\ref{ass:random_oracle}, $\rho$ is uniform after all values $(b_i,\tilde y_i,R_i,D_{w_i})$ are fixed, so the adversary must make the nonzero polynomial
+\[
+P_\Delta(\rho)=\sum_{i=1}^m \Delta_i\rho^{i-1}
+\]
+vanish at a random field point. This polynomial has degree at most $m-1$, so by Lemma~\ref{lem:schwartz_zippel},
+$
+\Pr[P_\Delta(\rho)=0]\le (m-1)/p.
+$
+Combining the negligible tag/KZG failures with the folding error gives the claimed bound.
+\end{proof}
+
+\begin{theorem}[Privacy against Honest-but-Curious Verifier]\label{thm:privacy}
+Under Assumptions~\ref{ass:discrete_log},~\ref{ass:pedersen_binding}, and~\ref{ass:mask_opening}, if every mask $\mu_i$ and blinding scalar $\theta_i$ are freshly sampled from $\FF_p$, then an honest-but-curious verifier cannot recover the challenged evaluations $\{y_i=f_i(r_i)\}_{i=1}^m$ or the raw sectors $\{m_{i,j,k}\}$ from the audit transcript with non-negligible advantage, even when the candidate space for $y_i$ is small.
+\end{theorem}
+
+\begin{proof}
+The field element $\tilde y_i=y_i+\mu_i$ is statistically uniform over $\FF_p$ because $\mu_i$ is uniform and used once. The accompanying commitment $R_i=g^{\mu_i}u^{\theta_i}$ is a Pedersen commitment; for any candidate value $y'$ and corresponding candidate mask $\mu'=\tilde y_i-y'$, there exists a blinding value $\theta'$ such that $R_i=g^{\mu'}u^{\theta'}$. Hence $R_i$ gives no testable predicate for distinguishing the true $y_i$ from any candidate.
+
+The hiding quotient commitment $D_{w_i}=g^{w_i(\tau)}u^{\xi_i}$ is also statistically hiding, and $\Pi_{\mathsf{pm}}$ is zero-knowledge by Assumption~\ref{ass:mask_opening}. Therefore the verifier's view can be simulated from the public metadata, challenged tags, and roots without knowing $\{y_i,\mu_i,\theta_i,\xi_i,w_i(X)\}$. Recovering raw sector coefficients from $\sigma_{i,j}$ or $b_i$ would require solving discrete logarithms or learning the trapdoor $\tau$. Thus the transcript does not enable recovery of the challenged evaluations or raw sectors, except with negligible probability.
 \end{proof}
 
 
 
 \subsection{Complexity Analysis}
 \label{sec:complexity_analysis}
-We measure computational overhead in terms of group exponentiations in $\GG_1$ ($E$), and bilinear pairings ($P$). Communication overhead is measured in bits using $|p|$, $|G_1|$, and $|h|$ to denote the bit lengths of a field element, a group element, and a cryptographic hash digest, respectively.
+We measure computational overhead in terms of group exponentiations ($E$) and bilinear pairings ($P$). Field arithmetic, hash evaluations, Fiat--Shamir transcript hashing, group multiplications, and Merkle-path hashing are omitted from the group-operation count. Communication overhead is measured in bits using $|p|$, $|\GG_1|$, $|\GG_T|$, and $|h|$ for a field element, a $\GG_1$ element, a target-group element, and a hash digest, respectively. The following counts instantiate $\Pi_{\mathsf{pm}}$ with the concrete Sigma protocol in Section~\ref{sec:multi_poly_batch_evaluation}.
 
 \paragraph{Computation Complexity.} 
-% Neglecting lightweight Merkle hash operations, overhead is measured in group exponentiations ($E$) and bilinear pairings ($P$).
 \begin{itemize}
-    \item $\Store$ Algorithm. Since the DO holds the secret trapdoor $\tau$, each homomorphic tag $\sigma_{i,j}=g^{f_{i,j}(\tau)}$ is computed via direct polynomial evaluation in $1E$. Across $m$ files and $n$ chunks, the total cost is $mnE$.
-    \item $\ProofGen$ Algorithm. For each file $i \in [m]$, the CS computes the privacy commitment $R_i = g^{\mu_i}$ ($1E$), and commits to the per-file quotient polynomial $C_{w_i}$ ($(s-1)E$). 
-    Calculating $b$ requires $sE$. Per-file point evaluations and masking commitments $\{S_i\}_{i=1}^m$ cost $mE$. The global masking commitment $R_W$ costs $1E$, and the KZG opening proof $\pi_{\text{batch}}$ requires committing to a degree-$(s-3)$ quotient polynomial ($(s-2)E$). 
-    % Polynomial divisions, scalar masking, and power computations involve $\mathcal{O}(ms + mc)$ field operations. 
-    Summing these components, the prover's exact cryptographic workload is $(ms+m+2s-1)E$, which scales as $\mathcal{O}(msE)$.
+    \item $\Store$ Algorithm. Since the DO holds the trapdoor $\tau$, each tag $\sigma_{i,j}=g^{f_{i,j}(\tau)}$ costs one exponentiation after evaluating $f_{i,j}(\tau)$ in the field. Across $m$ files and $n$ chunks, the storage-side group cost is
     \[
-\underbrace{msE}_{\text{Step 1}} + \underbrace{(s+m+1)E}_{\text{Step 2}} + \underbrace{(s-2)E}_{\text{Step 3}} = (ms + m + 2s - 1)E,
-\]
-    \item $\Verify$ Algorithm. The verifier recomputes aggregated tags $b$ ($mcE$) and the folded quotient commitment $C_W$ ($mE$). The batch KZG opening check (i.e., Step 3), requiring $2E+2P$. The cross-file consistency check (i.e., Step~4) requires $3E$ for $\mathsf{LHS}$ and $mE$ for $\mathsf{RHS}$.
-    Thus, the verifier performs $(mc + 2m + 3)E+2P$ cryptographic operations.
-    % Crucially, the pairing count remains constant ($2P$) and independent of the batch size $m$, file parameters $n, s$, or challenge size $c$.
+        mnE .
+    \]
+    \item $\ProofGen$ Algorithm. For each file, after forming the aggregated polynomial $f_i(X)=\sum_{k=0}^{s-1}a_{i,k}X^k$ in the field, the CS computes the aggregate commitment as $b_i=g^{f_i(\tau)}=\prod_{k=0}^{s-1}(g^{\tau^k})^{a_{i,k}}$ using the SRS. This costs $sE$, rather than $cE$, and is equivalent to $\prod_{j\in J}\sigma_{i,j}^{v_{i,j}}$ by the homomorphism of KZG commitments. The CS also computes the Pedersen mask commitment $R_i=g^{\mu_i}u^{\theta_i}$ using $2E$ and the hiding quotient commitment $D_{w_i}=g^{w_i(\tau)}u^{\xi_i}$ using $sE$. Thus the explicit per-file commitments cost
     \[
-\underbrace{mcE}_{\text{Step 2}} + \underbrace{mE}_{\text{Step 3}} + \underbrace{(m+3)E}_{\text{Step 4}} = (mc + 2m + 3)E+2P,
-\]
+        \underbrace{msE}_{\{b_i\}}+
+        \underbrace{2mE}_{\{R_i\}}+
+        \underbrace{msE}_{\{D_{w_i}\}}
+        =
+        m(2s+2)E .
+    \]
+    The Sigma commitments add $2mE$ for $\{A_{R,i}\}$, $msE$ for $\{A_{D,i}\}$, $(2s-1)E$ for $(P_1^0,P_2^0)$, and $2P$ for $A_F$. Hence the full proof-generation group cost is
+    \[
+        (3ms+4m+2s-1)E+2P .
+    \]
+    Since the audit challenge size satisfies $c>s$ in the intended parameter regime, computing $b_i$ from the coefficient vector of $f_i$ keeps proof generation at $O(msE)+2P$ rather than $O(mcE)$.
+    \item $\Verify$ Algorithm. The verifier recomputes $\hat b_i=\prod_{j\in J}\sigma_{i,j}^{v_{i,j}}$ for all files using $mcE$. The Sigma proof then costs $3mE$ for the $R_i$ opening checks, $(s+1)mE$ for the $D_{w_i}$ opening checks, and $(m+2s+1)E+2P$ for $(P_0,P_1,P_2)$ and the folded pairing check. Therefore verification costs
+    \[
+        (mc+ms+5m+2s+1)E+2P .
+    \]
 \end{itemize}
 
 
@@ -918,13 +1020,17 @@ We measure computational overhead in terms of group exponentiations in $\GG_1$ (
 \begin{itemize}
     \item $\Store$ Algorithm. The DO transmits raw file data to the CS, incurring $mns|p|$ bits. Concurrently, $mn$ homomorphic tags $\{\sigma_{i,j}\}$ are outsourced to enable future homomorphic aggregation, costing $mn|\GG_1|$ bits. The DO securely shares $m$ Merkle root hashes $\{\Gamma_i\}_{i=1}^m$ with the verifier for audit authentication, requiring $m|h|$ bits. The total one-time outsourcing communication is $mns|p| + mn|\GG_1| + m|h|$.
     \[
-\underbrace{mns|p|}_{\text{File data}} + \underbrace{mn|\GG_1|}_{\text{Tags}} + \underbrace{m|h|}_{\text{Merkle roots}}=mns|p| + mn|\GG_1| + m|h|,
-\]
-    \item $\ProofGen$ Algorithm. For each file $i \in [m]$, the proof payload includes $(\mathsf{Auth}_i, \tilde{y}_i, R_i, C_{w_i}, \{\sigma_{i,j}\}_{j\in J})$, contributing $c|\GG_1| + 2|\GG_1| + |p| + c\log_2 n |h|$ per file. The cross-file aggregation includes $(b,\tilde{V}_W, R_W, \pi_{\text{batch}}, \{\tilde{v}_{i,z}, S_i\}_{i=1}^m)$, adding $3|\GG_1| + |p| + m(|\GG_1| + |p|)$ bits. Aggregating across all files, the total audit proof size scales as:
-    \[
-        (mc+3m+3)|G_1| + (2m+1)|p| + mc\log_2 n |h|).
+    \begin{aligned}
+    &\underbrace{mns|p|}_{\text{File data}}+
+    \underbrace{mn|\GG_1|}_{\text{Tags}}+
+    \underbrace{m|h|}_{\text{Merkle roots}}\\
+    &=mns|p|+mn|\GG_1|+m|h| .
+    \end{aligned}
     \]
-    % $$\underbrace{m(c|\GG_1| + 2|\GG_1| + |p| + c\log_2 n |h|)}_{\text{per-file}} + \underbrace{3|\GG_1| + |p| + m(|\GG_1| + |p|)}_{\text{Cross-file}}$$
+    \item $\ProofGen$ Algorithm. For each file $i\in[m]$, the proof contains $c$ challenged tags $\{\sigma_{i,j}\}_{j\in J}$, three group elements $(R_i,D_{w_i},b_i)$, one field element $\tilde y_i$, and $c$ Merkle authentication paths. The Sigma proof contributes two additional $\GG_1$ elements $(A_{R,i},A_{D,i})$ per file, $(s+2)$ field responses per file, and one target-group element $A_F$. Therefore the total proof communication is
+    \[
+        m(c+5)|\GG_1|+m(s+3)|p|+|\GG_T|+mc\log_2 n|h| .
+    \]
 \end{itemize}
 
 
@@ -948,109 +1054,91 @@ The batch size decrements to $m \leftarrow m-1$, and future $\ProofGen$ executio
 \label{sec:related_works}
 
 
-Recent years have witnessed significant advances in provable data possession (PDP) schemes for cloud and decentralized storage systems. Several blockchain-assisted auditing mechanisms have been proposed to enhance transparency and eliminate reliance on trusted third-party auditors.
+Recent years have witnessed significant advances in provable data possession (PDP) schemes for cloud and decentralized storage systems. The works most closely related to FoldAudit differ in their batching model, privacy treatment, and support for dynamic data.
 
-Xu et al. [XuTIFS26] proposed MPA, a lightweight integrity auditing scheme integrating polynomial commitments with Merkle trees for multi-copy decentralized storage. Their design achieves efficient block-level verification and supports dynamic updates through rank-based Merkle tree structures. While MPA enables batch auditing across multiple providers and employs blockchain-based commit-and-reveal protocols for challenge generation, it utilizes a shared evaluation point across all files. 
-In the multi-file batch auditing of XuTIFS26, the reliance on a single shared challenge point $r$ introduces a cross-file error cancellation vulnerability. Consider an adversary targeting two audited files $F_i$ and $F_j$. The adversary submits forged evaluation claims $val_i^* = f_i(r) + \delta$ and $val_j^* = f_j(r) - \delta$ for an arbitrary $\delta \in \mathbb{Z}_p^*$. Leveraging the homomorphic property of KZG commitments, the adversary constructs compensating quotient witnesses $w_i^* = g^{h_i(\alpha) - \delta/(\alpha-r)}$ and $w_j^* = g^{h_j(\alpha) + \delta/(\alpha-r)}$, where $h_k(X) = (f_k(X) - val_k^*)/(X-r)$. During verification, the global pairing check evaluates $\hat{e}(\sigma^{\mathsf{global}} \cdot g^{-val^{\mathsf{global}}}, g) \stackrel{?}{=} \hat{e}(w^{\mathsf{global}}, g^{\alpha-r})$. Since the aggregate evaluation error $\sum_k (val_k^* - f_k(r))$ vanishes and the forged witnesses satisfy $\sum_k (\alpha-r) \cdot \log_g w_k^* = \sum_k (f_k(\alpha) - val_k^*)$, the verification equation holds with probability 1. Consequently, the global check accepts the batch despite individual file corruption, demonstrating that the protocol enforces only aggregate polynomial consistency rather than strict per-file soundness.
+Xu et al.~\cite{XuTIFS26} proposed MPA, a lightweight and updatable auditing scheme that combines polynomial commitments with Merkle authentication for decentralized multi-copy storage. MPA supports full aggregation across files and providers and uses a blockchain-assisted commit-and-reveal procedure to derive unpredictable challenges. Its proof-generation cost is dominated by a degree-$(s-1)$ KZG witness, while the Merkle layer gives efficient block-level updates. However, the multi-file verification equation aggregates all local proofs at a shared evaluation point $r$. Therefore, the batch check does not provide independent per-file evaluation points or an explicit random-folding soundness bound for cross-file cancellation; it verifies a globally aggregated opening together with Merkle membership paths.
 
-Zhang et al. [ZhangTPDS23] addressed on-chain storage overhead in decentralized storage networks by employing Boneh et al.'s batch polynomial commitment scheme (PCS-MPAP). Their approach compresses multi-file proofs into constant-sized payloads using a vanishing polynomial $Z_T(X)=\prod_{l=1}^m(X-r_l)$.
-% TODO
-In batch auditing protocols that publish unmasked linear combinations of plaintext polynomial evaluations on-chain (e.g., $E_i = \sum_{l=1}^{d} \beta_l \cdot S_{l,i}$ and $\{\beta_l\}$ are fixed), a critical privacy vulnerability emerges under the honest-but-curious verifier model. Since the blockchain ledger is fully transparent, an adversary can passively collect audit transcripts across multiple rounds, each utilizing independently sampled folding weights $\{\beta_l^{(t)}\}_{t=1}^{T}$. By aggregating the corresponding on-chain values $\{E_i^{(t)}\}$, the verifier constructs a linear system $\mathbf{E} = \mathbf{B} \mathbf{S}$. When the number of observed rounds $T$ exceeds the batch size $d$, the adversary can efficiently recover the underlying evaluation claims $\{S_{l,i}\}$ via Gaussian elimination, thereby reconstructing sensitive polynomial evaluations and violating the statistical confidentiality of the audited data. This cross-round linear correlation attack underscores the necessity of integrating fresh one-time masking or commitment-based hiding into batch proof generation to prevent plaintext leakage on transparent ledgers.
+Zhang et al.~\cite{ZhangTPDS23} addressed on-chain overhead for decentralized multi-copy auditing by instantiating the PCS-MPAP batch polynomial commitment. Their batch scheme assigns distinct evaluation points $\{r_l\}_{l=1}^d$ to files and publishes a constant-size per-SSP proof $(\sigma'_i,W_i,W'_i,E_i)$. This construction substantially reduces on-chain storage and avoids linear growth in the number of files. Nevertheless, the batch proof exposes the scalar $E_i=\sum_{l=1}^d \beta_l S_{l,i}$, i.e., an unmasked linear combination of file evaluation claims. On a transparent ledger, such plaintext evaluation combinations do not provide statistical evaluation privacy against an honest-but-curious verifier. The scheme also focuses on multi-copy auditing rather than dynamic file updates.
 
+Yu et al.~\cite{YuTC25} designed a storage verification scheme for resource-constrained Industrial IoT environments. It combines a homomorphic hash function, polynomial commitments, and a Tag-IMHT authenticated structure to eliminate pairings from verification and to support chunk-level modification, insertion, and deletion. The privacy-enhanced variant masks the proof polynomial by adding a random term derived from $(\beta,\eta)$ and returns an additional masking tag $B$. This protects the challenged polynomial from interpolation attacks in the single-file setting. The scheme, however, does not provide a native multi-file batch verification equation; auditing multiple files requires independent protocol executions.
 
-Yu et al. [YuTC25] designed a lightweight storage verification scheme tailored for resource-constrained Industrial IoT environments. Their innovation eliminates bilinear pairings during verification by transmitting quotient polynomial coefficients directly and leveraging public structured parameters. While this achieves computational efficiency for IIoT devices and supports privacy-enhanced verification through masking techniques, the scheme does not support batch auditing across multiple files. Moreover, explicitly publishing quotient coefficients exposes the underlying polynomial structure, enabling curious verifiers to recover original data sectors through Lagrange interpolation with sufficient challenges, thereby compromising statistical hiding properties.
+Miao et al.~\cite{MiaoSCIS2026} proposed MKPDP, a blockchain-assisted multi-keyword searchable PDP scheme. Its index matrix and match indexes let the verifier check that all files matching the queried keywords participate in the audit, thereby addressing search-result integrity, pre-matching, and pre-computation attacks. The proof $\{T,\mu_1,R\}$ aggregates authenticators over the matched files and masks the aggregate data value as $\mu_1=\mu-rh_1(T_w,R)$. Thus, MKPDP supports keyword-filtered multi-file auditing and data privacy, but it is not a polynomial-opening batch protocol and does not provide independent per-file evaluation points or a tight finite-field folding bound.
 
-Miao et al. [MiaoSCIS2026] presented a blockchain-assisted multi-keyword searchable PDP scheme optimized for keyword-filtered auditing in cloud environments. Their protocol employs BLS-type homomorphic signatures with scalar linear aggregation, yielding constant-sized proofs independent of batch size. However, treating each sector as an independent scalar rather than encoding chunks as polynomials forfeits algebraic compression benefits. Consequently, both tag generation and verification scale linearly with total sectors, and privacy protection relies on simple random masking without computational hiding guarantees, offering weaker security against adaptive correlation attacks.
-
-Despite these advances, existing schemes face critical limitations: (1) shared evaluation points enable cross-file error cancellation; (2) lack of explicit tight soundness bounds hinders practical parameter selection; (3) insufficient privacy guarantees expose evaluations to curious verifiers; and (4) heavy on-chain computation or complex polynomial arithmetic limits scalability. Our scheme addresses these gaps through Fiat-Shamir folding over independent per-file quotient polynomials, achieving tight soundness bounds, provable evaluation privacy, and constant-pairing verification without prohibitive computational overhead.
+Despite these advances, existing schemes leave at least one of the following gaps: no native arbitrary multi-file batch audit, no independent per-file polynomial challenge points, no explicit tight batch soundness bound, limited evaluation privacy on transparent ledgers, or dynamic support with a different update granularity. FoldAudit addresses these gaps through Fiat--Shamir folding over independently challenged per-file quotient equations, transcript-bound masked evaluations, and stateless file-level add/delete operations.
 
 
 \begin{table*}[htbp]
   \centering
-  \caption{Functional and Security Feature Comparison of Batch-Verifiable PDP Schemes}
+  \caption{Functional and Security Feature Comparison for Multi-File Integrity Auditing}
   \label{tab:feature_comparison_simplified}
-  \renewcommand{\arraystretch}{1.25}
-  \begin{tabular}{|c|c|c|c|c|c|c|}
+  \renewcommand{\arraystretch}{1.22}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{l|c|c|c|c|c|c}
     \hline
-    \textbf{Scheme} & \textbf{Batch Auditing} & \textbf{Independent $r_i$} & \textbf{Tight Soundness} & \textbf{Evaluation Privacy} & \textbf{Dynamic Updates} & \textbf{Error Resistance} \\
-    \hline    
-    XuTIFS26 
-    & \checkmark & \times & \times & \times & \checkmark$^*$ & \times \\
+    \textbf{Scheme} & \textbf{Multi-File Batch} & \textbf{Independent $r_i$} & \textbf{Tight Batch Bound} & \textbf{Evaluation Privacy} & \textbf{Dynamic Ops.} & \textbf{Cancellation Resistance} \\
     \hline
-    ZhangTPDS23 
-    & \checkmark & \checkmark & \times & \times & \times & \checkmark \\
+    XuTIFS26~\cite{XuTIFS26} & \cmark & \xmark & \xmark & \xmark & \cmark & \xmark \\
+    ZhangTPDS23~\cite{ZhangTPDS23} & \cmark & \cmark & \xmark & \xmark & \xmark & \cmark \\
+    YuTC25~\cite{YuTC25} & \xmark & -- & \xmark & \cmark$^\dag$ & \cmark & -- \\
+    MiaoSCIS2026~\cite{MiaoSCIS2026} & \cmark$^\ddag$ & -- & \xmark & \cmark & \cmark$^\S$ & \xmark \\
+    \textbf{Ours} & \cmark & \cmark & \cmark & \cmark$^\ast$ & \cmark & \cmark \\
     \hline
-    YuTC25 & \times & - & \times & \checkmark$^\dag$ & \checkmark$^*$ & \times \\
-    \hline
-    MiaoSCIS2026 
-    & \checkmark & - & \times & \times & \checkmark & \times \\
-    \hline
-    \textbf{Ours} 
-    & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
-    \hline
-  \end{tabular}
+  \end{tabular}%
+  }
+  \vspace{1mm}
   \footnotesize
-  \begin{tabular}{p{9cm}p{9cm}}
-    \textbf{Batch Auditing}: Simultaneous multi-file verification. & \textbf{Independent $r_i$}: Distinct challenge points prevent cross-file pole cancellation. \\
-    % TODO
-    \textbf{Tight Soundness}: Explicit finite-field error bound, not asymptotic reduction. &    \textbf{Evaluation Privacy}: Hiding challenged evaluations against curious verifiers. \\
-    \textbf{Dynamic Updates}: Stateless file add/delete with Merkle updates. &    \textbf{Error Resistance}: Resisting algebraic error-offset and cancellation attacks.\\
-    -: No independent $r_i$ is required if batch auditing is not supported. &    *: Unlike add/delete files, the schemes consider modifying data in a single file\\
+  \begin{tabular}{p{0.48\textwidth}p{0.48\textwidth}}
+    \textbf{Multi-File Batch}: native verification of multiple files in one audit. &
+    \textbf{Independent $r_i$}: distinct file-specific polynomial evaluation points in one batch equation. \\
+    \textbf{Tight Batch Bound}: explicit finite-field batch soundness error. &
+    \textbf{Evaluation Privacy}: hiding challenged evaluation values from honest-but-curious verifiers. \\
+    \textbf{Dynamic Ops.}: update support; the supported granularity differs across schemes. &
+    \textbf{Cancellation Resistance}: explicit resistance to cross-file algebraic error cancellation in the batch equation. \\
   \end{tabular}
-  \begin{tabular}{p{18cm}}    
-    $\dag$: Yu et al.~\cite{} proofs include quotient polynomial and evaluation point, making the file data exposed to the verifier. The extended version only protects privacy of a data sector (i.e., the constant value of chunk polynomial.)
+  \begin{tabular}{p{0.96\textwidth}}
+    $--$: not applicable because the scheme does not use polynomial multi-file batch evaluation.
+    $\dag$: only the privacy-enhanced YuTC25 variant masks the proof polynomial; the basic variant is not private against interpolation.
+    $\ddag$: MKPDP audits keyword-matched files in aggregate rather than arbitrary polynomial openings.
+    $\S$: MKPDP supports file add/delete operations; YuTC25 and XuTIFS26 support chunk/block-level updates, while FoldAudit supports stateless file add/delete.
+    $^\ast$: FoldAudit uses Pedersen mask commitments and Fiat--Shamir Sigma masked-opening proofs to avoid low-entropy candidate testing.
   \end{tabular}
 \end{table*}
 
 
-To facilitate a direct comparison, we adopt the unified notation throughout this section: $m$ files in a single audit batch, each comprising $n$ chunks, where each chunk is algebraically encoded as a polynomial of degree $s-1$ (i.e., $s$ sectors per chunk). Let $c$ denote the number of challenged chunks per file. 
+To facilitate a direct comparison, we adopt the unified notation throughout this section: $m$ files in a single audit batch, each comprising $n$ chunks, where each chunk is algebraically encoded as a polynomial of degree $s-1$ (i.e., $s$ sectors per chunk). Let $c$ denote the number of challenged chunks per file. We count only expensive group exponentiations and pairings; field operations, group multiplications, PRF calls, hashes, and Merkle-path hashing are omitted from Table~\ref{tab:computation}. For FoldAudit, the table reports the concrete Fiat--Shamir Sigma masked-opening proof from Section~\ref{sec:multi_poly_batch_evaluation}, including its $\GG_1$ commitments, field responses, and the single target-group element $A_F$. For ZhangTPDS23 and XuTIFS26, which are originally parameterized by the number of replicas/providers, the table reports the normalized single-replica case $N=1$ so that the comparison focuses on multi-file integrity rather than replication redundancy. For MiaoSCIS2026, $m$ denotes the number of keyword-matched files participating in the audit.
 
 % \paragraph{}
 \noindent\textit{1.1) Computation Complexity of Yu et al.~\cite{YuTC25}}
 \begin{itemize}
-\item \textbf{\Store{} Algorithm.}  For file \(i\) and chunk \(j\), the data owner evaluates the chunk polynomial at the secret point and computes the homomorphic tag as ours. Therefore, the storage computation is \(mnE\).
-\item \textbf{\ProofGen{} Algorithm.} The only counted group exponentiation is the privacy mask \(B=g^\beta\). Therefore, over \(m\) independent files, the computation is \(mE\).
-\item \textbf{\Verify{} Algorithm.}  For each file, the verifier reconstructs \(H_Z=g^{Z_{\mathrm{prf}}(\psi)}\) from the \(s\)-coefficient quotient polynomial, derives \(H_{\mathrm{prf}}\), and checks the equation involving \(B^\eta\), \(c\) challenged tags, \(H_Z^{-z}\), and \(\mathrm{HHF}(P_{\mathrm{prf}}(z))\). 
-These steps contribute \(2s+c+3\) exponentiations per file. Thus, the verifier computation is \(m(2s+c+3)E\).
+\item \textbf{$\Store$ Algorithm.}  For file \(i\) and chunk \(j\), the data owner evaluates the chunk polynomial at the secret point and computes the homomorphic tag as ours. Therefore, the storage computation is \(mnE\).
+\item \textbf{$\ProofGen$ Algorithm.} The only counted group exponentiation is the privacy mask \(B=g^\beta\). Therefore, over \(m\) independent files, the computation is \(mE\).
+\item \textbf{$\Verify$ Algorithm.}  For each file, the verifier reconstructs \(H_Z\) from the \(s\)-coefficient quotient polynomial and checks the privacy-enhanced verification equation involving \(B^\eta\), \(c\) challenged tags, \(H_Z^{-z}\), and \(\mathrm{HHF}(P_{\mathrm{prf}}(z))\). Following the operation count reported in YuTC25, this costs \((s+c+4)E\) per independent audit. Thus, auditing \(m\) files independently costs \(m(s+c+4)E\).
 \end{itemize}
 
 \noindent\textit{1.2) Communication Complexity of Yu et al.~\cite{YuTC25}}
 \begin{itemize}
-\item \textbf{\Store{} Algorithm.} The data owner uploads \(mns\) field sectors and \(mn\) homomorphic tags to the server, and shares one Merkle
+\item \textbf{$\Store$ Algorithm.} The data owner uploads \(mns\) field sectors and \(mn\) homomorphic tags to the server, and shares one Merkle
 root per file with the verifier.  Hence the one-time storage communication is \(mns|p|+mn|G_1|+m|h|\).
-\item \textbf{\ProofGen{} Algorithm.}  For each file, the response
+\item \textbf{$\ProofGen$ Algorithm.}  For each file, the response
 contains the \(s\)-coefficient quotient polynomial, one evaluation value,
 \(c\) challenged tags, one mask \(B\), and \(c\) Merkle paths of length $\log n$.  Across \(m\) files, the proof communication is
 \(m(s+1)|p|+m(c+1)|\GG_1|+mc\log n|h|\).
 \end{itemize}
-% \textbf{Computational Complexity.}
-% \begin{itemize}
-%     \item $\Store$: The data owner computes $mn$ homomorphic tags, costing exactly $mnE$.
-%     \item $\ProofGen$: The server aggregates $c$ challenged tags per file and generates one privacy mask $B$ per file, requiring $mE$ exponentiations. 
-%     % Polynomial quotient coefficient extraction relies on field arithmetic, contributing negligible group operations.
-%     \item $\Verify$: For each file, the verifier reconstructs the quotient hash $H_Z$ and its shifted counterpart $H_{prf}$, costing $2sE$ per file. Validating the pairing-free equation $\prod \sigma^{v} \stackrel{?}{=} H_{prf} \cdot H_Z^{-z} \cdot \mathsf{HHF}(P_{prf}(z))$ requires $c+3$ additional exponentiations. Across $m$ files, the total verifier cost is exactly $m(2s + c + 2)E$ and no parings.
-% \end{itemize}
-
-% \textbf{Communication Complexity.}
-% \begin{itemize}
-%     \item $\Store$: Outsourcing $mns$ raw sectors, $mn$ tags, and $m$ Merkle roots incurs $mns|p| + mn|G_1| + m|h|$.
-%     \item $\ProofGen$: The proof payload per file includes the $s$ quotient coefficients ($s|p|$), $c$ challenged tags ($c|G_1|$), one aggregated tag ($|G_1|$), one evaluation ($|p|$), one privacy mask ($|G_1|$), and $c$ Merkle paths ($c\log_2 n |h|$). Scaled to $m$ files, the total communication is exactly $m\big((s+1)|p| + (c+1)|G_1| + c\log_2 n |h|\big)$.
-% \end{itemize}
 
 \noindent\textit{2.1) Computation Complexity of Zhang et al.~\cite{ZhangTPDS23}}
 \begin{itemize}
-\item \textbf{\Store{} Algorithm.}  For each file block, the tag \(\sigma_{i,j}=(H(F_{id}\|i\|j)\cdot g^{f_{i,j}(\alpha)})^x\) requires one exponentiation for \(g^{f_{i,j}(\alpha)}\) and one exponentiation for
+\item \textbf{$\Store$ Algorithm.}  For each file block, the tag \(\sigma_{i,j}=(H(F_{id}\|i\|j)\cdot g^{f_{i,j}(\alpha)})^x\) requires one exponentiation for \(g^{f_{i,j}(\alpha)}\) and one exponentiation for
 the outer secret-key power. Across \(mn\) tags this gives \(2mnE\). 
 % During storage-phase tag verification, the provider recomputes \(g^{f_{i,j}(\alpha)}\) from the \(s\) sector coefficients and checks a two-pairing equation for each tag; this adds \(mnsE+2mnP\).  Thus the storage computation is \((2mn+mns)E+2mnP\).
-\item \textbf{\ProofGen{} Algorithm.} For each file, exponentiating the \(c\) challenged tags by their audit coefficients costs \(cE\), and applying the file-folding
+\item \textbf{$\ProofGen$ Algorithm.} For each file, exponentiating the \(c\) challenged tags by their audit coefficients costs \(cE\), and applying the file-folding
 coefficient \(\beta_l\) costs one more exponentiation.  Over \(m\) files this contributes \(mcE+mE\). The two polynomial-commitment proof elements \(W\) and \(W'\) are obtained from coefficient vectors of length \(s-1\), so their counted work is \((2s-2)E\). Therefore, the total cost is \((mc+m+2s-2)E\).
-\item \textbf{\Verify{} Algorithm.} The verifier constructs the challenge term \(\zeta\) by exponentiating \(c\) hashed indices per file and then applying \(m\) file-folding powers, costing \((mc+m)E\). It also forms \(\psi=g^{-E_1}\cdot W_1^{-Z_T(z)}\) and \(u\cdot v^{-z}\), which contributes \(3E\).  The batch equation \(e(\sigma',g)e(\psi,v)=e(\zeta,v)e(W',u\cdot v^{-z})\) contains four pairings. Hence, verification costs \((mc+m+3)E+4P\).
+\item \textbf{$\Verify$ Algorithm.} The verifier constructs the challenge term \(\zeta\) by exponentiating \(c\) hashed indices per file and then applying \(m\) file-folding powers, costing \((mc+m)E\). It also forms \(\psi=g^{-E_1}\cdot W_1^{-Z_T(z)}\) and \(u\cdot v^{-z}\), which contributes \(3E\).  The batch equation \(e(\sigma',g)e(\psi,v)=e(\zeta,v)e(W',u\cdot v^{-z})\) contains four pairings. Hence, verification costs \((mc+m+3)E+4P\).
 \end{itemize}
 
 \noindent\textit{2.2) Communication Complexity of Zhang et al.~\cite{ZhangTPDS23}}
 \begin{itemize}
-\item \textbf{\Store{} Algorithm.}  The storage phase sends the file copy, containing \(mns\) field sectors, and \(mn\) tags. The storage communication is \(mns|p|+mn|G_1|\).
-\item \textbf{\ProofGen{} Algorithm.}  The published proof is
+\item \textbf{$\Store$ Algorithm.}  The storage phase sends the file copy, containing \(mns\) field sectors, and \(mn\) tags. The storage communication is \(mns|p|+mn|G_1|\).
+\item \textbf{$\ProofGen$ Algorithm.}  The published proof is
 \((\sigma',W_1,W'_1,E_1)\), namely three group elements and one field element.  Therefore the audit-proof communication is \(3|G_1|+|p|\).
 \end{itemize}
 
@@ -1058,7 +1146,7 @@ coefficient \(\beta_l\) costs one more exponentiation.  Over \(m\) files this co
 
 \noindent\textit{3.1) Computation Complexity of Miao et al.~\cite{MiaoSCIS2026}}
 \begin{itemize}
-\item \textbf{\Store{} Algorithm.}  In IndexGen, the data owner computes
+\item \textbf{$\Store$ Algorithm.}  In IndexGen, the data owner computes
 one match index \(\Omega_i=(H_{F_i}\cdot H_2(FID_i))^{-x}\) per file, so
 the counted work is \(mE\).  In AuthGen, the data owner creates one
 authenticator
@@ -1070,46 +1158,45 @@ terms are omitted, giving \(mnE\).  Therefore the full storage-side
 computation is \((m+mn)E\), with no pairing.  If the keyword-index module
 is stripped and only the PDP authentication core is compared, this phase
 reduces to \(mnE\).
-\item \textbf{\ProofGen{} Algorithm.}  After locating the matched set
-\(R\), the server computes
+\item \textbf{$\ProofGen$ Algorithm.}  After locating the matched set of
+\(m\) files, the server computes
 \(T=\prod_{i\in R}\prod_{j\in Q}\sigma_{i,j}^{e_{i,j}}\), which costs
-\(\rho cE\), and generates the privacy element \(R_g=g^r\), which costs
+\(mcE\), and generates the privacy element \(R_g=g^r\), which costs
 one more exponentiation.  Thus the proof-generation computation is
-\((\rho c+1)E\).
-\item \textbf{\Verify{} Algorithm.}  The verifier exponentiates one
+\((mc+1)E\).
+\item \textbf{$\Verify$ Algorithm.}  The verifier exponentiates one
 match index \(\Omega_i\) for each matched file and \(c\) hash terms
 inside each matched file, and it also computes \(u^{\mu_1}\) and
 \(R_g^{h_1(T_w,R_g)}\).  These operations contribute
-\((\rho+\rho c+2)E\).  The final verification equation has two pairings,
-so the verifier computation is \((\rho(c+1)+2)E+2P\).
+\((m+mc+2)E\).  The final verification equation has two pairings,
+so the verifier computation is \((m(c+1)+2)E+2P\).
 \end{itemize}
 
 \noindent\textit{3.2) Communication Complexity of Miao et al.~\cite{MiaoSCIS2026}}
 \begin{itemize}
-\item \textbf{\Store{} Algorithm.}  The data and authenticators sent to
+\item \textbf{$\Store$ Algorithm.}  The data and authenticators sent to
 the cloud contribute \(mn|p|+mn|G_1|\).  The match indexes contain one
 group element per file, adding \(m|G_1|\).  Thus the normalized storage
 communication is \(mn|p|+(mn+m)|G_1|\), excluding auxiliary searchable
 index metadata such as addresses and encrypted index matrices.
-\item \textbf{\ProofGen{} Algorithm.}  The audit proof
+\item \textbf{$\ProofGen$ Algorithm.}  The audit proof
 \((T,\mu_1,R_g)\) consists of two group elements and one field element,
 so the proof communication is \(|p|+2|G_1|\).
 \end{itemize}
 
 
-\noindent\textit{4.1) Computation Complexity of Xu et al.~\cite{}}
+\noindent\textit{4.1) Computation Complexity of Xu et al.~\cite{XuTIFS26}}
 \begin{itemize}
-\item \textbf{\Store{} Algorithm.}  For each file and block, the data
+\item \textbf{$\Store$ Algorithm.}  For each file and block, the data
 owner forms the block polynomial and computes the tag
 \(\sigma_{i,j}=g^{f_{m_{i,j}}(\alpha)}\).  Since polynomial evaluation
 uses field operations, tag generation contributes one group
-exponentiation for each of the \(mn\) tags.  The storage-side
-\textsf{TagVerify} step recomputes each commitment from the \(s\) sector
-coefficients as a product of public-key powers, which costs \(sE\) per
-block tag.  Hashing the Merkle leaves and roots is omitted under the
-current computation metric.  Therefore the storage computation is
-\(mn(s+1)E\), with no pairing.
-\item \textbf{\ProofGen{} Algorithm.}  For each file, the CSP linearly
+exponentiation for each of the \(mn\) tags.  Hashing the Merkle leaves
+and roots is omitted under the current computation metric.  The
+storage-side \textsf{TagVerify} cost reported by XuTIFS26 is a separate
+validation phase and is not included in this Store/Setup column.  Thus
+the normalized storage computation is \(mnE\), with no pairing.
+\item \textbf{$\ProofGen$ Algorithm.}  For each file, the CSP linearly
 combines the \(c\) challenged block polynomials, evaluates the
 aggregate polynomial at the challenge point, and divides by \(X-r\).
 These are field and polynomial operations.  The only counted operation is
@@ -1117,7 +1204,7 @@ the KZG witness \(w_i=g^{h_i(\alpha)}\).  Since \(h_i(X)\) has degree at
 most \(s-2\), computing the witness from the structured public key costs
 \((s-1)E\) per local proof.  Across \(m\) local proofs, proof generation
 costs \(m(s-1)E\), with no pairing.
-\item \textbf{\Verify{} Algorithm.}  The verifier first aggregates the
+\item \textbf{$\Verify$ Algorithm.}  The verifier first aggregates the
 challenged tags by computing
 \(\prod_{j=1}^{c}\sigma_{i,a_j}^{v_j}\) for every file, which costs
 \(mcE\).  It then computes \(g^{val^{global}}\) and
@@ -1129,18 +1216,18 @@ global KZG equation, requiring the two pairings
 check is not included in this normal verification cost.
 \end{itemize}
 
-\noindent\textit{4.2) Communication Complexity of Xu et al.~\cite{}}
+\noindent\textit{4.2) Communication Complexity of Xu et al.~\cite{XuTIFS26}}
 \begin{itemize}
-\item \textbf{\Store{} Algorithm.}  The storage phase sends \(mn\)
+\item \textbf{$\Store$ Algorithm.}  The storage phase sends \(mn\)
 encrypted blocks, each with \(s\) field sectors, and \(mn\) polynomial
 tags.  The Merkle root for each file is published as the
 verification anchor, and the algorithm also supplies authentication paths
 for stored blocks to the corresponding CSP.  Therefore the one-time
 storage communication is
-\(mns|p|+mn|G_1|+mn\log_2 n|h|+m|h|\).  If the server reconstructs and
+\(mns|p|+mn|G_1|+mn(\log_2 n+1)|h|+m|h|\).  If the server reconstructs and
 stores the Merkle tree locally instead of receiving all paths, the
-\(mn\log_2 n|h|\) term can be omitted.
-\item \textbf{\ProofGen{} Algorithm.}  For each file, the proof
+\(mn(\log_2 n+1)|h|\) term can be omitted.
+\item \textbf{$\ProofGen$ Algorithm.}  For each file, the proof
 contains one evaluation value \(val_i\), one witness \(w_i\), the \(c\)
 challenged tags, and \(c\) Merkle authentication paths.  Across \(m\)
 proofs, the audit-proof communication is
@@ -1151,19 +1238,19 @@ proofs, the audit-proof communication is
 
 \begin{table*}[t]
 \centering
-\caption{Computational Complexity Comparison (Exponentiations $E$ and Pairings $\mathsf{P}$)}
+\caption{Computational Complexity Comparison (Exponentiations $E$ and Pairings $P$)}
 \label{tab:computation}
 \renewcommand{\arraystretch}{1.3}
 \begin{tabular}{l|c|c|c}
 \hline
 \textbf{Scheme} & \textbf{Store/Setup} & \textbf{ProofGen} & \textbf{Verify} \\
 \hline
-Yu et al.~\cite{yu2023} & $mnE$ & $mE$ & $m(2s+c+3)E$\\
-Zhang et al.~\cite{zhang2024} & $2mnE$& $((mc+m+2s-2)E)$& $((mc+m+3)E+4P)$\\
-Miao et al.~\cite{miao2023} &  $((m+mn)E)$ & $((\rho c+1)E)$ & $((\rho(c+1)+2)E+2P)$\\
-Xu et al.~\cite{} & $(mn(s+1)E)$ & $(m(s-1)E)$ & $((mc+2)E+2P)$ \\
+Yu et al.~\cite{YuTC25} & $mnE$ & $mE$ & $m(s+c+4)E$\\
+Zhang et al.~\cite{ZhangTPDS23} & $2mnE$& $(mc+m+2s-2)E$& $(mc+m+3)E+4P$\\
+Miao et al.~\cite{MiaoSCIS2026} &  $(m+mn)E$ & $(mc+1)E$ & $(m(c+1)+2)E+2P$\\
+Xu et al.~\cite{XuTIFS26} & $mnE$ & $m(s-1)E$ & $(mc+2)E+2P$ \\
 \hline
-\textbf{Ours (Proposed)} & $\mathbf{mnE}$ & $(ms + m + 2s - 1)E$ & $(mc + 2m + 3)E+2P$ \\
+\textbf{Ours (Proposed)} & $\mathbf{mnE}$ & $(3ms+4m+2s-1)E+2P$ & $(mc+ms+5m+2s+1)E+2P$ \\
 \hline
 \end{tabular}
 \end{table*}
@@ -1177,12 +1264,12 @@ Xu et al.~\cite{} & $(mn(s+1)E)$ & $(m(s-1)E)$ & $((mc+2)E+2P)$ \\
 \hline
 \textbf{Scheme} & \textbf{Store Phase} & \textbf{ProofGen Phase} \\
 \hline
-Yu et al.~\cite{yu2023} & $mns|p| + mn|\GG_1| + m|h|$& $m\big((s+1)|p| + (c+1)|\GG_1| + c\log_2 n|h|\big)$\\
-Zhang et al.~\cite{zhang2024} & $mns|p| + mn|\GG_1|$& $ 3|\GG_1| + |p|$\\
-Miao et al.~\cite{miao2023} & \(mn|p|+(mn+m)|G_1|\) & \(|p|+2|G_1|\) \\
-Xu et al. \cite{Xu2026}& \(mns|p|+mn|G_1|+mn\log_2 n|h|+m|h|\)& \(m\bigl(|p|+(c+1)|G_1|+c\log_2 n|h|\bigr)\)\\
+Yu et al.~\cite{YuTC25} & $mns|p| + mn|\GG_1| + m|h|$& $m\big((s+1)|p| + (c+1)|\GG_1| + c\log_2 n|h|\big)$\\
+Zhang et al.~\cite{ZhangTPDS23} & $mns|p| + mn|\GG_1|$& $3|\GG_1| + |p|$\\
+Miao et al.~\cite{MiaoSCIS2026} & $mn|p|+(mn+m)|\GG_1|$ & $|p|+2|\GG_1|$ \\
+Xu et al.~\cite{XuTIFS26}& $mns|p|+mn|\GG_1|+mn(\log_2 n+1)|h|+m|h|$& $m\bigl(|p|+(c+1)|\GG_1|+c\log_2 n|h|\bigr)$\\
 \hline
-\textbf{Ours (Proposed)} & $mns|p| + mn|\GG_1| + m|h|$& $((mc+3m+3)|G_1|+(2m+1)|p|+mc\log_2 n|h|)$ \\
+\textbf{Ours (Proposed)} & $mns|p| + mn|\GG_1| + m|h|$& $m(c+5)|\GG_1|+m(s+3)|p|+|\GG_T|+mc\log_2 n|h|$ \\
 \hline
 \end{tabular}
 \end{table*}
@@ -1192,12 +1279,12 @@ Xu et al. \cite{Xu2026}& \(mns|p|+mn|G_1|+mn\log_2 n|h|+m|h|\)& \(m\bigl(|p|+(c+
 
 \section{Evaluation}
 
-\begin{myLem}[Overall Acceptance Probability Bound]
+\begin{lemma}[Overall Acceptance Probability Bound]
 Let $\rho \in [0,1]$ denote the fraction of corrupted or missing chunks in any audited file $F_i$, and let $d = \lfloor \rho n \rfloor$. When the Cloud Server executes $\ProofGen$ over a uniformly sampled challenge set $J \subseteq [n]$ with $|J|=c$, the probability that $\Verify$ outputs $accept$ despite the corruption is bounded by:
 \begin{equation}
-P_{\text{accept}} \leq \frac{\binom{n-d}{c}}{\binom{n}{c}} + \frac{s}{p} + \text{negl}(\lambda) \approx (1-\rho)^c + \text{negl}(\lambda).
+P_{\text{accept}} \leq \frac{\binom{n-d}{c}}{\binom{n}{c}} + \frac{m-1}{p} + \text{negl}(\lambda) \approx (1-\rho)^c + \text{negl}(\lambda).
 \end{equation}
-\end{myLem}
+\end{lemma}
 
 \begin{proof}
 Let $E_{\text{miss}}$ be the event that the challenge set $J$ contains no corrupted chunks. Since $J$ is sampled uniformly without replacement from $[n]$, the probability of this event is exactly the hypergeometric ratio:
@@ -1206,9 +1293,9 @@ Let $E_{\text{miss}}$ be the event that the challenge set $J$ contains no corrup
 \]
 When $n \gg c$, this simplifies to $(1-\rho)^c$. In this scenario, the prover can trivially satisfy all verification checks using only intact data.
 
-Let $E_{\text{forge}}$ be the complementary event where $J$ intersects at least one corrupted chunk. For $\Verify$ to still accept, the adversary must successfully forge Merkle authentication paths, satisfy the quotient-consistency pairing, and produce a valid folded KZG opening. By Theorem 2, under the $q$-SDH assumption and random oracle model, the probability of bypassing these cryptographic constraints is bounded by $\frac{s}{p} + \text{negl}(\lambda)$.
+Let $E_{\text{forge}}$ be the complementary event where $J$ intersects at least one corrupted chunk. For $\Verify$ to still accept, the adversary must successfully forge Merkle authentication paths, satisfy the quotient-consistency pairing, and avoid detection by the Fiat--Shamir folded check. By Theorem~\ref{thm:soundness}, under the $q$-SDH assumption and random oracle model, the probability of bypassing these cryptographic constraints is bounded by $\frac{m-1}{p} + \text{negl}(\lambda)$.
 
-Since $E_{\text{miss}}$ and $E_{\text{forge}}$ are mutually exclusive, the total false-acceptance probability satisfies $P_{\text{accept}} = \Pr[E_{\text{miss}}] + \Pr[E_{\text{forge}}]$. Substituting the respective bounds yields the stated inequality. For standard cryptographic parameters ($p \approx 2^{256}$, $s \ll p$), the term $\frac{s}{p}$ is negligible, and the audit security is strictly governed by the sampling parameter $c$.
+Since $E_{\text{miss}}$ and $E_{\text{forge}}$ are mutually exclusive, the total false-acceptance probability satisfies $P_{\text{accept}} = \Pr[E_{\text{miss}}] + \Pr[E_{\text{forge}}]$. Substituting the respective bounds yields the stated inequality. For standard cryptographic parameters ($p \approx 2^{256}$ and $m \ll p$), the term $\frac{m-1}{p}$ is negligible, and the audit security is strictly governed by the sampling parameter $c$.
 \end{proof}
 
 \begin{remark}[Parameter Selection]
@@ -1231,6 +1318,26 @@ A.~Gabizon, Z.~J.~Williamson, and O.~Ciobotaru,
 ``PLONK: Permutations over Lagrange-bases for Oecumenical Noninteractive arguments of Knowledge,'' 
 \textit{IACR Cryptology ePrint Archive}, Report 2019/953, 2019. 
 \url{https://eprint.iacr.org/2019/953}
+
+\bibitem{YuTC25}
+H.~Yu, H.~Zhang, Z.~Yang, Y.~Chen, and H.~Liu,
+``Efficient and Secure Storage Verification in Cloud-Assisted Industrial IoT Networks,''
+\emph{IEEE Transactions on Computers}, vol.~74, no.~5, pp.~1702--1716, 2025.
+
+\bibitem{ZhangTPDS23}
+Q.~Zhang, Z.~Zhang, J.~Cui, H.~Zhong, Y.~Li, C.~Gu, and D.~He,
+``Efficient Blockchain-Based Data Integrity Auditing for Multi-Copy in Decentralized Storage,''
+\emph{IEEE Transactions on Parallel and Distributed Systems}, vol.~34, no.~12, pp.~3162--3172, 2023.
+
+\bibitem{MiaoSCIS2026}
+Y.~Miao, K.~K.~Gai, and L.~Zhu,
+``Blockchain-Assisted Multi-Keyword Searchable Provable Data Possession for Cloud Storage,''
+\emph{Science China Information Sciences}, vol.~69, no.~3, article~132101, 2026.
+
+\bibitem{XuTIFS26}
+Y.~Xu, H.~Cheng, J.~Zheng, X.~Zhang, and H.~Wang,
+``MPA: Lightweight and Updatable Integrity Auditing for Decentralized Storage Using Merkle Trees and Polynomial Commitments,''
+\emph{IEEE Transactions on Information Forensics and Security}, vol.~21, pp.~2162--2176, 2026.
 
 \end{thebibliography}
 
