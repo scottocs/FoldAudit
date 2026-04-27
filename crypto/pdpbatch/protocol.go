@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const DefaultPrimeModulus = "52435875175126190479447740508185965837690552500527637822603658699938581184513"
+const DefaultPrimeModulus = "21888242871839275222246405745257275088548364400416034343698204186575808495617"
 
 type AuthMode string
 
@@ -39,7 +39,7 @@ func DefaultProtocolConfig() ProtocolConfig {
 		ChallengedChunks: 8,
 		PrimeModulus:     DefaultPrimeModulus,
 		FieldBytes:       32,
-		GroupBytes:       48,
+		GroupBytes:       32,
 		HashBytes:        32,
 		RNGSeed:          7,
 	}
@@ -112,19 +112,20 @@ type AuthPayload struct {
 }
 
 type FileProof struct {
-	Auth   AuthPayload
-	B      GroupElement
-	YTilde Scalar
-	R      GroupElement
+	Auth    AuthPayload
+	YTilde  Scalar
+	R       GroupElement
+	Cw      GroupElement
+	VZTilde Scalar
+	S       GroupElement
 }
 
 type AuditProof struct {
 	AuthMode   AuthMode
 	FileProofs []FileProof
-	Cq         GroupElement
-	Cqr        GroupElement
-	VTildeQ    Scalar
-	RQ         GroupElement
+	B          GroupElement
+	VTildeW    Scalar
+	RW         GroupElement
 	PiBatch    GroupElement
 }
 
@@ -197,9 +198,9 @@ func (p *BatchPDPProtocol) chunkPolynomial(sectors []Scalar) Polynomial {
 	return NewPolynomial(sectors, p.Field)
 }
 
-// merkleLeaf 将文件编号、分块编号和 KZG 标签绑定成 Merkle 叶子哈希。
-func (p *BatchPDPProtocol) merkleLeaf(fileIndex, chunkIndex int, tag GroupElement) []byte {
-	return stableHashBytes(p.Counter, "tag-leaf", fileIndex, chunkIndex, tag.Serialize())
+// merkleLeaf 将分块编号和 KZG 标签绑定成 Merkle 叶子哈希。
+func (p *BatchPDPProtocol) merkleLeaf(chunkIndex int, tag GroupElement) []byte {
+	return stableHashBytes(p.Counter, "tag-leaf", chunkIndex, tag.Serialize())
 }
 
 // aggregatePolynomial 按挑战系数线性组合被抽查分块的多项式。
@@ -266,30 +267,28 @@ func (p *BatchPDPProtocol) buildAuthPayload(storedFile StoredFile, challenge *Ch
 	}
 }
 
-// fiatShamirAlpha 从公开 transcript 中派生每个文件对应的批聚合随机系数 alpha_i。
-func (p *BatchPDPProtocol) fiatShamirAlpha(
-	challenge *Challenge,
-	roots [][]byte,
-	fileProofs []FileProof,
-	Cq GroupElement,
-	Cqr GroupElement,
-	fileIndex int,
-) Scalar {
+// fiatShamirRho 从所有 per-file quotient commitments 固定后的 transcript 中派生折叠标量 rho。
+func (p *BatchPDPProtocol) fiatShamirRho(challenge *Challenge, roots [][]byte, b GroupElement, fileProofs []FileProof) Scalar {
 	bundle := transcriptBundle(fileProofs)
-	return hashToField(p.Field, p.Counter, "alpha", challenge.ToPublicDict(), roots, bundle, Cq, Cqr, fileIndex)
+	return hashToField(p.Field, p.Counter, "foldaudit-rho", challenge.ToPublicDict(), roots, b, bundle, "1")
 }
 
-// fiatShamirZ 从完整批证明 transcript 中派生批量 KZG 打开点 z。
-func (p *BatchPDPProtocol) fiatShamirZ(
-	challenge *Challenge,
-	roots [][]byte,
-	fileProofs []FileProof,
-	Cq GroupElement,
-	Cqr GroupElement,
-	CQ GroupElement,
-) Scalar {
+// fiatShamirZ 从同一 transcript 中派生批量打开点 z，并避免与任一 r_i 相等。
+func (p *BatchPDPProtocol) fiatShamirZ(challenge *Challenge, roots [][]byte, b GroupElement, fileProofs []FileProof) Scalar {
 	bundle := transcriptBundle(fileProofs)
-	return hashToField(p.Field, p.Counter, "z", challenge.ToPublicDict(), roots, bundle, Cq, Cqr, CQ)
+	for attempt := 0; ; attempt++ {
+		z := hashToField(p.Field, p.Counter, "foldaudit-z", challenge.ToPublicDict(), roots, b, bundle, "2", attempt)
+		collides := false
+		for _, ri := range challenge.EvaluationPoints {
+			if scalarEqual(z, ri) {
+				collides = true
+				break
+			}
+		}
+		if !collides {
+			return z
+		}
+	}
 }
 
 // Store 对输入数据生成每个分块的 KZG 标签和 Merkle 根，得到后续审计所需的存储状态。
@@ -322,7 +321,7 @@ func (p *BatchPDPProtocol) Store(dataset [][][]Scalar) (*StoredBatch, error) {
 
 			poly := p.chunkPolynomial(sectorCopy)
 			tag := p.backend.CommitPolynomial(poly)
-			leaf := p.merkleLeaf(i, j, tag)
+			leaf := p.merkleLeaf(j, tag)
 
 			sectorsCopy = append(sectorsCopy, sectorCopy)
 			polynomials = append(polynomials, poly)
@@ -376,7 +375,7 @@ func (p *BatchPDPProtocol) Challenge() *Challenge {
 	}
 }
 
-// ProofGen 根据存储状态和挑战生成批量 PDP 证明，包含认证路径、掩码值和批 KZG 打开证明。
+// ProofGen 根据新版 FoldAudit 流程生成链下批量 PDP 证明。
 func (p *BatchPDPProtocol) ProofGen(storedBatch *StoredBatch, challenge *Challenge, authMode AuthMode) (*AuditProof, error) {
 	if err := p.validateStoredBatch(storedBatch); err != nil {
 		return nil, err
@@ -388,6 +387,7 @@ func (p *BatchPDPProtocol) ProofGen(storedBatch *StoredBatch, challenge *Challen
 	fileProofs := make([]FileProof, 0, len(storedBatch.Files))
 	fiPolys := make([]Polynomial, 0, len(storedBatch.Files))
 	wiPolys := make([]Polynomial, 0, len(storedBatch.Files))
+	b := p.backend.Identity()
 
 	for i, storedFile := range storedBatch.Files {
 		ri := challenge.EvaluationPoints[i]
@@ -415,42 +415,40 @@ func (p *BatchPDPProtocol) ProofGen(storedBatch *StoredBatch, challenge *Challen
 		if !remainder.IsZero() {
 			return nil, fmt.Errorf("quotient remainder non-zero for file %d", i)
 		}
+		Cwi := p.backend.CommitPolynomial(wi)
 
+		b = b.Mul(bi)
 		fiPolys = append(fiPolys, fi)
 		wiPolys = append(wiPolys, wi)
-		fileProofs = append(fileProofs, FileProof{Auth: auth, B: bi, YTilde: yTildeI, R: Ri})
+		fileProofs = append(fileProofs, FileProof{
+			Auth:   auth,
+			YTilde: yTildeI,
+			R:      Ri,
+			Cw:     Cwi,
+		})
 	}
 
-	qPoly := NewPolynomial([]Scalar{p.Field.Zero()}, p.Field)
-	Cqr := p.backend.Identity()
-	for i, wi := range wiPolys {
-		qPoly = qPoly.Add(wi)
-		wiCommit := p.backend.CommitPolynomial(wi)
-		Cqr = Cqr.Mul(wiCommit.Pow(challenge.EvaluationPoints[i]))
+	rho := p.fiatShamirRho(challenge, storedBatch.Roots, b, fileProofs)
+	WPoly := NewPolynomial([]Scalar{p.Field.Zero()}, p.Field)
+	rhoPower := p.Field.One()
+	for _, wi := range wiPolys {
+		WPoly = WPoly.Add(wi.Scale(rhoPower))
+		rhoPower = p.Field.Mul(rhoPower, rho)
 	}
 
-	Cq := p.backend.CommitPolynomial(qPoly)
-
-	alphas := make([]Scalar, p.Config.NumFiles)
-	for i := 0; i < p.Config.NumFiles; i++ {
-		alphas[i] = p.fiatShamirAlpha(challenge, storedBatch.Roots, fileProofs, Cq, Cqr, i)
+	z := p.fiatShamirZ(challenge, storedBatch.Roots, b, fileProofs)
+	VW := WPoly.Evaluate(z)
+	for i, fi := range fiPolys {
+		viZ := fi.Evaluate(z)
+		nuI := p.Field.Random(p.rng, false)
+		fileProofs[i].VZTilde = p.Field.Add(viZ, nuI)
+		fileProofs[i].S = p.backend.CommitScalar(nuI)
 	}
-
-	QPoly := qPoly
-	CQ := Cq
-	for i, alpha := range alphas {
-		QPoly = QPoly.Add(fiPolys[i].Scale(alpha))
-		CQ = CQ.Mul(fileProofs[i].B.Pow(alpha))
-	}
-
-	z := p.fiatShamirZ(challenge, storedBatch.Roots, fileProofs, Cq, Cqr, CQ)
-	VQ := QPoly.Evaluate(z)
-
 	eta := p.Field.Random(p.rng, false)
-	VTildeQ := p.Field.Add(VQ, eta)
-	RQ := p.backend.CommitScalar(eta)
+	VTildeW := p.Field.Add(VW, eta)
+	RW := p.backend.CommitScalar(eta)
 
-	piPoly, remainder := QPoly.SubtractConstant(VQ).DivideByLinear(z)
+	piPoly, remainder := WPoly.SubtractConstant(VW).DivideByLinear(z)
 	if !remainder.IsZero() {
 		return nil, errors.New("opening quotient remainder non-zero")
 	}
@@ -459,23 +457,22 @@ func (p *BatchPDPProtocol) ProofGen(storedBatch *StoredBatch, challenge *Challen
 	return &AuditProof{
 		AuthMode:   authMode,
 		FileProofs: fileProofs,
-		Cq:         Cq,
-		Cqr:        Cqr,
-		VTildeQ:    VTildeQ,
-		RQ:         RQ,
+		B:          b,
+		VTildeW:    VTildeW,
+		RW:         RW,
 		PiBatch:    piBatch,
 	}, nil
 }
 
-// verifyAuth 验证单个文件的标签认证路径，并重新计算聚合标签是否与证明中的 B_i 一致。
-func (p *BatchPDPProtocol) verifyAuth(fileIndex int, root []byte, fileProof FileProof, challenge *Challenge, authMode AuthMode) bool {
+// verifyAuth 验证单个文件的标签认证路径。
+func (p *BatchPDPProtocol) verifyAuth(root []byte, fileProof FileProof, challenge *Challenge, authMode AuthMode) bool {
 	leafHashes := make(map[int][]byte, len(challenge.Indices))
 	for _, j := range challenge.Indices {
 		tag, ok := fileProof.Auth.Tags[j]
 		if !ok {
 			return false
 		}
-		leafHashes[j] = p.merkleLeaf(fileIndex, j, tag)
+		leafHashes[j] = p.merkleLeaf(j, tag)
 	}
 
 	switch authMode {
@@ -499,23 +496,27 @@ func (p *BatchPDPProtocol) verifyAuth(fileIndex int, root []byte, fileProof File
 	default:
 		return false
 	}
+	return true
+}
 
-	bHat := p.backend.Identity()
+// aggregateProofTag 根据证明携带的被挑战标签重算单文件聚合标签。
+func (p *BatchPDPProtocol) aggregateProofTag(fileProof FileProof, challenge *Challenge) (GroupElement, bool) {
+	result := p.backend.Identity()
 	for _, j := range challenge.Indices {
 		tag, ok := fileProof.Auth.Tags[j]
 		if !ok {
-			return false
+			return GroupElement{}, false
 		}
 		coefficient, ok := challenge.Coefficients[j]
 		if !ok {
-			return false
+			return GroupElement{}, false
 		}
-		bHat = bHat.Mul(tag.Pow(coefficient))
+		result = result.Mul(tag.Pow(coefficient))
 	}
-	return bHat.Equal(fileProof.B)
+	return result, true
 }
 
-// Verify 检查完整审计证明：先验证 Merkle 认证，再验证两个 KZG 配对关系。
+// Verify 检查完整审计证明：认证标签、重算折叠承诺、验证批量打开与隐藏评估一致性。
 func (p *BatchPDPProtocol) Verify(storedBatch *StoredBatch, challenge *Challenge, proof *AuditProof) bool {
 	if p.validateStoredBatch(storedBatch) != nil || p.validateChallenge(challenge) != nil || proof == nil {
 		return false
@@ -524,39 +525,107 @@ func (p *BatchPDPProtocol) Verify(storedBatch *StoredBatch, challenge *Challenge
 		return false
 	}
 
+	perFileTags := make([]GroupElement, p.Config.NumFiles)
+	bHat := p.backend.Identity()
 	for i := 0; i < p.Config.NumFiles; i++ {
-		if !p.verifyAuth(i, storedBatch.Roots[i], proof.FileProofs[i], challenge, proof.AuthMode) {
+		if !p.verifyAuth(storedBatch.Roots[i], proof.FileProofs[i], challenge, proof.AuthMode) {
 			return false
 		}
+		bi, ok := p.aggregateProofTag(proof.FileProofs[i], challenge)
+		if !ok {
+			return false
+		}
+		perFileTags[i] = bi
+		bHat = bHat.Mul(bi)
 	}
-
-	A := p.backend.Identity()
-	for _, fp := range proof.FileProofs {
-		term := fp.B.Mul(fp.R).Mul(p.g.Pow(p.Field.Neg(fp.YTilde)))
-		A = A.Mul(term)
-	}
-
-	if !p.backend.PairingEqual(A.Mul(proof.Cqr), p.backend.G2Generator(), proof.Cq, p.backend.TauG2()) {
+	if !bHat.Equal(proof.B) {
 		return false
 	}
 
-	alphas := make([]Scalar, p.Config.NumFiles)
+	rho := p.fiatShamirRho(challenge, storedBatch.Roots, proof.B, proof.FileProofs)
+	CW := p.backend.Identity()
+	rhoPower := p.Field.One()
 	for i := 0; i < p.Config.NumFiles; i++ {
-		alphas[i] = p.fiatShamirAlpha(challenge, storedBatch.Roots, proof.FileProofs, proof.Cq, proof.Cqr, i)
+		CW = CW.Mul(proof.FileProofs[i].Cw.Pow(rhoPower))
+		rhoPower = p.Field.Mul(rhoPower, rho)
 	}
 
-	CQ := proof.Cq
-	for i, alpha := range alphas {
-		CQ = CQ.Mul(proof.FileProofs[i].B.Pow(alpha))
+	if !p.verifyFoldedQuotientBinding(perFileTags, challenge, proof, rho, CW) {
+		return false
 	}
 
-	z := p.fiatShamirZ(challenge, storedBatch.Roots, proof.FileProofs, proof.Cq, proof.Cqr, CQ)
-	lhs := CQ.
-		Mul(proof.RQ).
-		Mul(p.g.Pow(p.Field.Neg(proof.VTildeQ))).
+	z := p.fiatShamirZ(challenge, storedBatch.Roots, proof.B, proof.FileProofs)
+	openingLHS := CW.
+		Mul(p.g.Pow(p.Field.Neg(proof.VTildeW))).
+		Mul(proof.RW).
 		Mul(proof.PiBatch.Pow(z))
+	if !p.backend.PairingEqual(openingLHS, p.backend.G2Generator(), proof.PiBatch, p.backend.TauG2()) {
+		return false
+	}
 
-	return p.backend.PairingEqual(lhs, p.backend.G2Generator(), proof.PiBatch, p.backend.TauG2())
+	evalLHS, evalRHS, ok := p.maskedEvaluationSides(challenge, proof, rho, z)
+	return ok && evalLHS.Equal(evalRHS)
+}
+
+// verifyFoldedQuotientBinding 将 Merkle 认证过的聚合标签与折叠 quotient commitments 绑定。
+func (p *BatchPDPProtocol) verifyFoldedQuotientBinding(
+	perFileTags []GroupElement,
+	challenge *Challenge,
+	proof *AuditProof,
+	rho Scalar,
+	CW GroupElement,
+) bool {
+	if len(perFileTags) != len(proof.FileProofs) {
+		return false
+	}
+
+	left := p.backend.Identity()
+	rhoPower := p.Field.One()
+	for i, fp := range proof.FileProofs {
+		term := perFileTags[i].
+			Mul(fp.R).
+			Mul(p.g.Pow(p.Field.Neg(fp.YTilde))).
+			Mul(fp.Cw.Pow(challenge.EvaluationPoints[i]))
+		left = left.Mul(term.Pow(rhoPower))
+		rhoPower = p.Field.Mul(rhoPower, rho)
+	}
+	return p.backend.PairingEqual(left, p.backend.G2Generator(), CW, p.backend.TauG2())
+}
+
+// maskedEvaluationSides 构造 PDF Algorithm 5 Step 4 的隐藏评估一致性等式两侧。
+func (p *BatchPDPProtocol) maskedEvaluationSides(
+	challenge *Challenge,
+	proof *AuditProof,
+	rho Scalar,
+	z Scalar,
+) (GroupElement, GroupElement, bool) {
+	negOne := p.Field.Neg(p.Field.One())
+	sum := p.Field.Zero()
+	rhs := p.backend.Identity()
+	rhoPower := p.Field.One()
+
+	for i, fp := range proof.FileProofs {
+		denominator := p.Field.Sub(z, challenge.EvaluationPoints[i])
+		if denominator.IsZero() {
+			return GroupElement{}, GroupElement{}, false
+		}
+		inverseDenominator, err := p.Field.Inv(denominator)
+		if err != nil {
+			return GroupElement{}, GroupElement{}, false
+		}
+		scale := p.Field.Mul(rhoPower, inverseDenominator)
+		diff := p.Field.Sub(fp.VZTilde, fp.YTilde)
+		sum = p.Field.Add(sum, p.Field.Mul(scale, diff))
+
+		maskTerm := fp.R.Mul(fp.S.Pow(negOne))
+		rhs = rhs.Mul(maskTerm.Pow(scale))
+		rhoPower = p.Field.Mul(rhoPower, rho)
+	}
+
+	lhs := p.g.Pow(proof.VTildeW).
+		Mul(proof.RW.Pow(negOne)).
+		Mul(p.g.Pow(p.Field.Neg(sum)))
+	return lhs, rhs, true
 }
 
 // CloneStoredBatch 深拷贝可变数据字段，方便测试篡改场景而不破坏原始存储状态。
@@ -668,11 +737,11 @@ func (p *BatchPDPProtocol) SizeReport(challenge *Challenge, proof *AuditProof) m
 	}
 
 	proofBytes := p.Config.NumFiles*len(challenge.Indices)*p.Config.GroupBytes +
-		p.Config.NumFiles*2*p.Config.GroupBytes +
-		p.Config.NumFiles*p.Config.FieldBytes +
+		p.Config.NumFiles*3*p.Config.GroupBytes +
+		p.Config.NumFiles*2*p.Config.FieldBytes +
 		authHashNodes*p.Config.HashBytes +
-		4*p.Config.GroupBytes +
-		2*p.Config.FieldBytes
+		3*p.Config.GroupBytes +
+		p.Config.FieldBytes
 
 	return map[string]int{
 		"store_bytes":     storeBytes,
@@ -747,16 +816,16 @@ func (p *BatchPDPProtocol) validateChallenge(challenge *Challenge) error {
 }
 
 type fileTranscript struct {
-	B      GroupElement `json:"b"`
 	YTilde string       `json:"y_tilde"`
 	R      GroupElement `json:"R"`
+	Cw     GroupElement `json:"Cw"`
 }
 
 // transcriptBundle 抽取 Fiat-Shamir 所需的证明公开字段，避免把认证路径等大对象纳入哈希。
 func transcriptBundle(fileProofs []FileProof) []fileTranscript {
 	bundle := make([]fileTranscript, len(fileProofs))
 	for i, proof := range fileProofs {
-		bundle[i] = fileTranscript{B: proof.B, YTilde: scalarHex(proof.YTilde), R: proof.R}
+		bundle[i] = fileTranscript{YTilde: scalarHex(proof.YTilde), R: proof.R, Cw: proof.Cw}
 	}
 	return bundle
 }

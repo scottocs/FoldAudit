@@ -8,12 +8,12 @@ import (
 	"math/big"
 	"math/rand"
 
-	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
-	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
-	"github.com/consensys/gnark-crypto/ecc/bls12-381/kzg"
+	bn254 "github.com/consensys/gnark-crypto/ecc/bn254"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	"github.com/consensys/gnark-crypto/ecc/bn254/kzg"
 )
 
-// Scalar 表示 BLS12-381 标量域中的元素，是协议里所有有限域数值的基础类型。
+// Scalar 表示 BN254（BN256）标量域中的元素，是协议里所有有限域数值的基础类型。
 type Scalar = fr.Element
 
 // OperationCounter 记录实验用的哈希、群运算、配对和域运算次数，不用于精确密码学计费。
@@ -52,7 +52,7 @@ type PrimeField struct {
 	counter *OperationCounter
 }
 
-// NewPrimeField 创建 BLS12-381 标量域封装，并校验传入模数是否与底层曲线实现一致。
+// NewPrimeField 创建 BN254（BN256）标量域封装，并校验传入模数是否与底层曲线实现一致。
 func NewPrimeField(modulus string, counter *OperationCounter) (*PrimeField, error) {
 	if counter == nil {
 		counter = &OperationCounter{}
@@ -64,7 +64,7 @@ func NewPrimeField(modulus string, counter *OperationCounter) (*PrimeField, erro
 			return nil, errors.New("prime modulus must be a base-10 integer")
 		}
 		if parsed.Cmp(expected) != 0 {
-			return nil, errors.New("pdpbatch uses the BLS12-381 scalar field modulus")
+			return nil, errors.New("pdpbatch uses the BN254 (BN256) scalar field modulus")
 		}
 	}
 	return &PrimeField{
@@ -274,7 +274,7 @@ func (p Polynomial) DivideByLinear(root Scalar) (Polynomial, Scalar) {
 }
 
 type GroupElement struct {
-	Point bls12381.G1Affine
+	Point bn254.G1Affine
 
 	backend *CurveKZGBackend
 }
@@ -286,7 +286,7 @@ func (g GroupElement) Mul(other GroupElement) GroupElement {
 	}
 	g.backend.counter.GroupMultiplications++
 
-	var out bls12381.G1Affine
+	var out bn254.G1Affine
 	out.Add(&g.Point, &other.Point)
 	return GroupElement{Point: out, backend: g.backend}
 }
@@ -295,7 +295,7 @@ func (g GroupElement) Mul(other GroupElement) GroupElement {
 func (g GroupElement) Pow(scalar Scalar) GroupElement {
 	g.backend.counter.Exponentiations++
 
-	var out bls12381.G1Affine
+	var out bn254.G1Affine
 	out.ScalarMultiplication(&g.Point, scalarBigInt(scalar))
 	return GroupElement{Point: out, backend: g.backend}
 }
@@ -324,7 +324,7 @@ type CurveKZGBackend struct {
 	counter *OperationCounter
 }
 
-// NewCurveKZGBackend 生成实验用 KZG SRS，并返回基于 BLS12-381 曲线群的承诺后端。
+// NewCurveKZGBackend 生成实验用 KZG SRS，并返回基于 BN254（BN256）曲线群的承诺后端。
 func NewCurveKZGBackend(field *PrimeField, maxPolynomialSize int, rng *rand.Rand, counter *OperationCounter) (*CurveKZGBackend, error) {
 	if maxPolynomialSize <= 0 {
 		return nil, errors.New("max polynomial size must be positive")
@@ -353,7 +353,7 @@ func (b *CurveKZGBackend) Generator() GroupElement {
 
 // Identity 返回 G1 群的单位元，用于累加承诺时的初始值。
 func (b *CurveKZGBackend) Identity() GroupElement {
-	var point bls12381.G1Affine
+	var point bn254.G1Affine
 	point.SetInfinity()
 	return GroupElement{Point: point, backend: b}
 }
@@ -362,7 +362,7 @@ func (b *CurveKZGBackend) Identity() GroupElement {
 func (b *CurveKZGBackend) CommitScalar(scalar Scalar) GroupElement {
 	b.counter.Exponentiations++
 
-	var point bls12381.G1Affine
+	var point bn254.G1Affine
 	point.ScalarMultiplication(&b.srs.Vk.G1, scalarBigInt(scalar))
 	return GroupElement{Point: point, backend: b}
 }
@@ -379,24 +379,24 @@ func (b *CurveKZGBackend) CommitPolynomial(polynomial Polynomial) GroupElement {
 }
 
 // G2Generator 返回配对检查中使用的 G2 生成元。
-func (b *CurveKZGBackend) G2Generator() bls12381.G2Affine {
+func (b *CurveKZGBackend) G2Generator() bn254.G2Affine {
 	return b.srs.Vk.G2[0]
 }
 
 // TauG2 返回 SRS 中的 tau*G2，用于验证 KZG 打开关系。
-func (b *CurveKZGBackend) TauG2() bls12381.G2Affine {
+func (b *CurveKZGBackend) TauG2() bn254.G2Affine {
 	return b.srs.Vk.G2[1]
 }
 
 // PairingEqual 检查 e(left,leftG2) 是否等于 e(right,rightG2)，并记录两次配对开销。
-func (b *CurveKZGBackend) PairingEqual(left GroupElement, leftG2 bls12381.G2Affine, right GroupElement, rightG2 bls12381.G2Affine) bool {
+func (b *CurveKZGBackend) PairingEqual(left GroupElement, leftG2 bn254.G2Affine, right GroupElement, rightG2 bn254.G2Affine) bool {
 	b.counter.Pairings += 2
 
 	negRight := right.Point
 	negRight.Neg(&negRight)
-	ok, err := bls12381.PairingCheck(
-		[]bls12381.G1Affine{left.Point, negRight},
-		[]bls12381.G2Affine{leftG2, rightG2},
+	ok, err := bn254.PairingCheck(
+		[]bn254.G1Affine{left.Point, negRight},
+		[]bn254.G2Affine{leftG2, rightG2},
 	)
 	return err == nil && ok
 }
@@ -444,6 +444,15 @@ func scalarBigInt(value Scalar) *big.Int {
 	var out big.Int
 	value.BigInt(&out)
 	return &out
+}
+
+// scalarEqual 比较两个标量的规范值。
+func scalarEqual(left, right Scalar) bool {
+	var leftInt big.Int
+	var rightInt big.Int
+	left.BigInt(&leftInt)
+	right.BigInt(&rightInt)
+	return leftInt.Cmp(&rightInt) == 0
 }
 
 // scalarHex 返回标量的定长十六进制编码，便于稳定输出和哈希绑定。

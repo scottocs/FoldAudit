@@ -95,7 +95,7 @@ func main() {
 		Notes: []string{
 			"All protocol work is executed off-chain.",
 			"verify_ms is the third-party verifier's local verification time averaged over timing_rounds per repeat.",
-			"The KZG backend in crypto/pdpbatch uses gnark-crypto BLS12-381 G1/G2 groups and pairing checks.",
+			"The KZG backend in crypto/pdpbatch uses gnark-crypto BN254 (BN256) G1/G2 groups and pairing checks.",
 		},
 	}
 	if err := writeJSON(*outPath, result); err != nil {

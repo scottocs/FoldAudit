@@ -68,6 +68,49 @@ func TestTamperedChallengedDataIsDetected(t *testing.T) {
 	}
 }
 
+// TestTamperedFoldAuditProofFieldsAreDetected 确认新版 FoldAudit 证明的关键字段被改动后会被拒绝。
+func TestTamperedFoldAuditProofFieldsAreDetected(t *testing.T) {
+	config := DefaultProtocolConfig()
+	config.NumFiles = 3
+	config.ChunksPerFile = 16
+	config.SectorsPerChunk = 4
+	config.ChallengedChunks = 4
+	config.RNGSeed = 24
+
+	protocol, err := NewBatchPDPProtocol(config)
+	if err != nil {
+		t.Fatalf("NewBatchPDPProtocol failed: %v", err)
+	}
+
+	dataset := protocol.RandomFileBatch()
+	storedBatch, err := protocol.Store(dataset)
+	if err != nil {
+		t.Fatalf("Store failed: %v", err)
+	}
+	challenge := protocol.Challenge()
+	proof, err := protocol.ProofGen(storedBatch, challenge, AuthModeMP)
+	if err != nil {
+		t.Fatalf("ProofGen failed: %v", err)
+	}
+	if !protocol.Verify(storedBatch, challenge, proof) {
+		t.Fatal("Verify rejected honest proof")
+	}
+
+	tamperedCw := *proof
+	tamperedCw.FileProofs = append([]FileProof(nil), proof.FileProofs...)
+	tamperedCw.FileProofs[0].Cw = proof.FileProofs[1].Cw
+	if protocol.Verify(storedBatch, challenge, &tamperedCw) {
+		t.Fatal("Verify accepted tampered quotient commitment")
+	}
+
+	tamperedEvaluation := *proof
+	tamperedEvaluation.FileProofs = append([]FileProof(nil), proof.FileProofs...)
+	tamperedEvaluation.FileProofs[0].VZTilde = protocol.Field.Add(tamperedEvaluation.FileProofs[0].VZTilde, protocol.Field.One())
+	if protocol.Verify(storedBatch, challenge, &tamperedEvaluation) {
+		t.Fatal("Verify accepted tampered masked z evaluation")
+	}
+}
+
 // TestMultiProofUsesFewerOrEqualHashNodesThanSinglePaths 比较多重证明和单路径证明携带的哈希节点数量。
 func TestMultiProofUsesFewerOrEqualHashNodesThanSinglePaths(t *testing.T) {
 	config := DefaultProtocolConfig()
