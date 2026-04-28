@@ -695,7 +695,7 @@ Checking these $m$ relations separately would require $O(m)$ pairing checks, so 
 \EndFor
 
 \Statex {{\color{gray}Step 4: Fiat-Shamir Folding Challenge}}
-\State $\rho \gets H_2(\mathsf{fold},\mathsf{chal},\{\Gamma_i\}_{i=1}^m,\{b_i\}_{i=1}^m,\{\tilde{y}_i\}_{i=1}^m,\{R_i\}_{i=1}^m,\{C_{w_i}\}_{i=1}^m,\Pi_R)$
+\State $\rho \gets H_2(\mathsf{fold},\mathsf{chal},\{\Gamma_i\},\{b_i\},\{\tilde{y}_i\},\{R_i\},\{C_{w_i}\},\Pi_R)$
 
 \Statex {{\color{gray}Step 5: Folded Masked KZG Verification}}
 \State $L\gets \prod_{i=1}^m\left(b_iR_i g^{-\tilde y_i}C_{w_i}^{r_i}\right)^{\rho^{i-1}}$

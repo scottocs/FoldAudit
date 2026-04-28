@@ -60,4 +60,3 @@ func pairingEqual(left *bn256.G1, leftG2 *bn256.G2, right *bn256.G1, rightG2 *bn
 		[]*bn256.G2{leftG2, rightG2},
 	)
 }
-

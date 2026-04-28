@@ -102,4 +102,3 @@ func (p Polynomial) DivideByLinear(root *big.Int) (Polynomial, *big.Int) {
 	}
 	return NewPolynomial(quotient), carry
 }
-

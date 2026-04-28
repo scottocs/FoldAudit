@@ -104,4 +104,3 @@ func scalarBytes(x *big.Int) []byte {
 func cloneScalar(x *big.Int) *big.Int {
 	return normalizeScalar(x)
 }
-
