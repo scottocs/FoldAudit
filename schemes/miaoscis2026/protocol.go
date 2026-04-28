@@ -156,14 +156,9 @@ func (p *Protocol) Trapdoor(stored *StoredData, keywords []string) (Trapdoor, er
 }
 
 func (p *Protocol) Challenge(keywords []string, c int, files int) Challenge {
-	coeffs := make([][]*big.Int, files)
-	for i := range coeffs {
-		coeffs[i] = make([]*big.Int, min(c, p.N))
-		for j := range coeffs[i] {
-			coeffs[i][j] = benchcore.ScalarFromBytes("miaoscis2026:challenge:coeff", []byte(fmt.Sprintf("%d", i)), benchcore.IntBytes(j))
-		}
-	}
-	return p.challengeWith(keywords, Trapdoor{}, []byte("default-k1"), []byte("default-k2"), c, files, coeffs)
+	k1 := mustRandomBytes("miaoscis2026 challenge k1")
+	k2 := mustRandomBytes("miaoscis2026 challenge k2")
+	return p.challengeWith(keywords, Trapdoor{}, k1, k2, c, files, p.challengeCoeffs(k2, c, files))
 }
 
 func (p *Protocol) ChallengeWithTrapdoor(trap Trapdoor, c int, files int) Challenge {
@@ -171,14 +166,9 @@ func (p *Protocol) ChallengeWithTrapdoor(trap Trapdoor, c int, files int) Challe
 	for i, token := range trap.Tokens {
 		keywords[i] = token.Keyword
 	}
-	coeffs := make([][]*big.Int, files)
-	for i := range coeffs {
-		coeffs[i] = make([]*big.Int, min(c, p.N))
-		for j := range coeffs[i] {
-			coeffs[i][j] = benchcore.ScalarFromBytes("miaoscis2026:challenge:coeff", []byte("trapdoor"), benchcore.IntBytes(i), benchcore.IntBytes(j))
-		}
-	}
-	return p.challengeWith(keywords, trap, []byte("trapdoor-k1"), []byte("trapdoor-k2"), c, files, coeffs)
+	k1 := mustRandomBytes("miaoscis2026 trapdoor challenge k1")
+	k2 := mustRandomBytes("miaoscis2026 trapdoor challenge k2")
+	return p.challengeWith(keywords, trap, k1, k2, c, files, p.challengeCoeffs(k2, c, files))
 }
 
 func (p *Protocol) challengeWith(keywords []string, trap Trapdoor, k1, k2 []byte, c int, files int, coeffs [][]*big.Int) Challenge {
@@ -193,6 +183,20 @@ func (p *Protocol) challengeWith(keywords []string, trap Trapdoor, k1, k2 []byte
 		K1:       append([]byte(nil), k1...),
 		K2:       append([]byte(nil), k2...),
 	}
+}
+
+func (p *Protocol) challengeCoeffs(k2 []byte, c int, files int) [][]*big.Int {
+	if c > p.N {
+		c = p.N
+	}
+	coeffs := make([][]*big.Int, files)
+	for i := range coeffs {
+		coeffs[i] = make([]*big.Int, c)
+		for j := range coeffs[i] {
+			coeffs[i][j] = benchcore.ScalarFromBytes("miaoscis2026:challenge:coeff", k2, benchcore.IntBytes(i), benchcore.IntBytes(j))
+		}
+	}
+	return coeffs
 }
 
 func (p *Protocol) Prove(stored *StoredData, chal Challenge) (*Proof, error) {
@@ -277,6 +281,14 @@ func h2FID(fid []byte) *bn256.G1 {
 
 func h3Aux(aux string) *bn256.G1 {
 	return benchcore.HashToG1Bytes("miaoscis2026:H3", []byte(aux))
+}
+
+func mustRandomBytes(context string) []byte {
+	out, err := benchcore.RandomBytes(nil, 32)
+	if err != nil {
+		panic(fmt.Sprintf("%s: %v", context, err))
+	}
+	return out
 }
 
 func challengeHash(keywords []string, r *bn256.G1) *big.Int {

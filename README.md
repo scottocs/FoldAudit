@@ -51,20 +51,27 @@ The Section VI evaluation uses the paper settings:
 
 - challenge size `c = 690`
 - batch size `m = 1..20`
-- file size `B = 1..10 MB`
+- file size `B = 1..100 MB`
 - sectors per chunk `s = 20..100`
 - chunks per file `n = max(c, ceil(B/(32s)))`
 
-Generate fresh CSV files and figures:
+Generate fresh CSV files by executing the reproduced protocols on simulated
+file contents, then draw the figures:
 
 ```bash
+go run ./experiments/protocolbench -profile paper -out experiments/out/vi_evaluation/vi_overhead_all.csv
 .venv/bin/python experiments/evaluate_vi_settings.py
 ```
 
-If running outside the virtual environment:
+The `paper` profile executes the full Section VI workload and can take a long
+time because storage generation really computes tags for the simulated files.
+
+For a fast sanity check of the protocol-execution pipeline, use the small quick
+profile instead of the full paper workload:
 
 ```bash
-python3 experiments/evaluate_vi_settings.py
+go run ./experiments/protocolbench -profile quick -out /tmp/foldaudit_protocol_quick.csv
+.venv/bin/python experiments/evaluate_vi_settings.py --csv /tmp/foldaudit_protocol_quick.csv
 ```
 
 Generated outputs are written to:
@@ -92,9 +99,9 @@ cp experiments/out/vi_evaluation/*.pdf paper/figures/vi_evaluation/
 
 ## Notes
 
-- The experiment script estimates protocol-level overhead from the reproduced
-  system implementations and locally calibrated `bn256` primitive costs. It
-  avoids repeatedly materializing large encoded files while preserving the
-  workload scale described in Section VI.
+- The experiment pipeline measures protocol-level overhead by directly calling
+  each reproduced scheme's `Store`, challenge generation, proof generation, and
+  verification routines. It no longer estimates runtime from single-operation
+  primitive costs.
 - `paper/refs/PDP_Protocols.tex` is used as the implementation reference for
   the related protocols in `schemes/`.

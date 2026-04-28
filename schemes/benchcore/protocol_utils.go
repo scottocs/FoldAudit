@@ -2,11 +2,14 @@ package benchcore
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
+	"sort"
 
 	bn256 "github.com/ethereum/go-ethereum/crypto/bn256/cloudflare"
 )
@@ -139,6 +142,56 @@ func ScalarFromBytes(label string, parts ...[]byte) *big.Int {
 		x.SetInt64(1)
 	}
 	return x
+}
+
+func RandomBytes(reader io.Reader, size int) ([]byte, error) {
+	if reader == nil {
+		reader = rand.Reader
+	}
+	out := make([]byte, size)
+	if _, err := io.ReadFull(reader, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func RandomScalar(reader io.Reader, nonZero bool) (*big.Int, error) {
+	if reader == nil {
+		reader = rand.Reader
+	}
+	for {
+		x, err := rand.Int(reader, Order)
+		if err != nil {
+			return nil, err
+		}
+		x = Normalize(x)
+		if !nonZero || x.Sign() != 0 {
+			return x, nil
+		}
+	}
+}
+
+func RandomUniqueIndices(reader io.Reader, c, n int) ([]int, error) {
+	if reader == nil {
+		reader = rand.Reader
+	}
+	if c > n {
+		c = n
+	}
+	selected := make(map[int]struct{}, c)
+	for len(selected) < c {
+		x, err := rand.Int(reader, big.NewInt(int64(n)))
+		if err != nil {
+			return nil, err
+		}
+		selected[int(x.Int64())] = struct{}{}
+	}
+	out := make([]int, 0, len(selected))
+	for index := range selected {
+		out = append(out, index)
+	}
+	sort.Ints(out)
+	return out, nil
 }
 
 func IntBytes(value int) []byte {

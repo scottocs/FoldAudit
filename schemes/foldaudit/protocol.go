@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"sort"
 
 	bn256 "github.com/ethereum/go-ethereum/crypto/bn256/cloudflare"
 
@@ -67,7 +66,7 @@ func Setup(config Config, reader io.Reader) (*Protocol, error) {
 		reader = rand.Reader
 	}
 
-	tau, err := randomScalar(reader, true)
+	tau, err := benchcore.RandomScalar(reader, true)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +146,7 @@ func (p *Protocol) RandomDataset() ([][][]*big.Int, error) {
 		for j := range data[i] {
 			data[i][j] = make([]*big.Int, p.Config.SectorsPerChunk)
 			for k := range data[i][j] {
-				x, err := randomScalar(p.rand, false)
+				x, err := benchcore.RandomScalar(p.rand, false)
 				if err != nil {
 					return nil, err
 				}
@@ -181,7 +180,7 @@ func (p *Protocol) Store(dataset [][][]*big.Int) (*StoredBatch, error) {
 			}
 			sectors[j] = cloneScalars(chunk)
 			polys[j] = benchcore.NewPoly(sectors[j])
-			tags[j] = p.CommitPolynomial(polys[j])
+			tags[j] = p.ownerCommitPolynomial(polys[j])
 			leaves[j] = merkleLeaf(fileID, j, tags[j])
 		}
 
@@ -213,7 +212,7 @@ func (p *Protocol) Challenge() (*Challenge, error) {
 	for i := range coefficients {
 		coefficients[i] = make([]*big.Int, len(indices))
 		for j := range indices {
-			coefficients[i][j], err = randomScalar(p.rand, true)
+			coefficients[i][j], err = benchcore.RandomScalar(p.rand, true)
 			if err != nil {
 				return nil, err
 			}
@@ -222,7 +221,7 @@ func (p *Protocol) Challenge() (*Challenge, error) {
 
 	points := make([]*big.Int, p.Config.NumFiles)
 	for i := range points {
-		points[i], err = randomScalar(p.rand, false)
+		points[i], err = benchcore.RandomScalar(p.rand, false)
 		if err != nil {
 			return nil, err
 		}
@@ -258,7 +257,7 @@ func (p *Protocol) ProofGen(stored *StoredBatch, chal *Challenge) (*AuditProof, 
 		bi := p.CommitPolynomial(fi)
 		yi := fi.Eval(chal.EvaluationPoints[i])
 
-		mu, err := randomScalar(p.rand, false)
+		mu, err := benchcore.RandomScalar(p.rand, false)
 		if err != nil {
 			return nil, err
 		}
@@ -333,21 +332,15 @@ func (p *Protocol) CommitPolynomial(poly benchcore.Poly) *bn256.G1 {
 	return benchcore.CommitG1(p.PP.SRSG1, poly)
 }
 
+func (p *Protocol) ownerCommitPolynomial(poly benchcore.Poly) *bn256.G1 {
+	if p.tau == nil {
+		panic("foldaudit: missing data-owner trapdoor for Store")
+	}
+	return benchcore.G1Base(poly.Eval(p.tau))
+}
+
 func (p *Protocol) sampleIndices() ([]int, error) {
-	selected := make(map[int]struct{}, p.Config.ChallengedChunks)
-	for len(selected) < p.Config.ChallengedChunks {
-		x, err := rand.Int(p.rand, big.NewInt(int64(p.Config.ChunksPerFile)))
-		if err != nil {
-			return nil, err
-		}
-		selected[int(x.Int64())] = struct{}{}
-	}
-	indices := make([]int, 0, len(selected))
-	for index := range selected {
-		indices = append(indices, index)
-	}
-	sort.Ints(indices)
-	return indices, nil
+	return benchcore.RandomUniqueIndices(p.rand, p.Config.ChallengedChunks, p.Config.ChunksPerFile)
 }
 
 func (p *Protocol) aggregatePolynomial(file StoredFile, chal *Challenge, fileIndex int) (benchcore.Poly, error) {
@@ -412,7 +405,7 @@ func (p *Protocol) schnorrMaskProofs(roots [][]byte, chal *Challenge, fps []File
 	stmt := maskStatementBytes(roots, chal, fps)
 	proofs := make([]SchnorrProof, len(fps))
 	for i := range fps {
-		a, err := randomScalar(p.rand, false)
+		a, err := benchcore.RandomScalar(p.rand, false)
 		if err != nil {
 			return nil, err
 		}
@@ -490,19 +483,6 @@ func (p *Protocol) validateChallenge(chal *Challenge) error {
 
 func merkleLeaf(fileID []byte, index int, tag *bn256.G1) []byte {
 	return benchcore.HashBytes("foldaudit:merkle:leaf", fileID, benchcore.IntBytes(index), g1Bytes(tag))
-}
-
-func randomScalar(reader io.Reader, nonZero bool) (*big.Int, error) {
-	for {
-		x, err := rand.Int(reader, benchcore.Order)
-		if err != nil {
-			return nil, err
-		}
-		x = benchcore.Normalize(x)
-		if !nonZero || x.Sign() != 0 {
-			return x, nil
-		}
-	}
 }
 
 func cloneScalars(values []*big.Int) []*big.Int {

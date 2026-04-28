@@ -88,7 +88,7 @@ func (p *Protocol) Store(data [][][]*big.Int) (*StoredBatch, error) {
 				return nil, fmt.Errorf("file %d block %d: expected %d sectors", i, j, p.S)
 			}
 			file.Blocks[j] = benchcore.NewPoly(data[i][j])
-			file.Tags[j] = benchcore.CommitG1(p.SRSG1, file.Blocks[j])
+			file.Tags[j] = p.ownerCommit(file.Blocks[j])
 			leaves[j] = xuLeaf(file.Tags[j])
 		}
 		tree, err := benchcore.NewMerkleTree(leaves)
@@ -101,6 +101,13 @@ func (p *Protocol) Store(data [][][]*big.Int) (*StoredBatch, error) {
 		out.Roots[i] = benchcore.CloneBytes(tree.Root)
 	}
 	return out, nil
+}
+
+func (p *Protocol) ownerCommit(poly benchcore.Poly) *bn256.G1 {
+	if p.alpha == nil {
+		panic("xutifs26: missing data-owner trapdoor for Store")
+	}
+	return benchcore.G1Base(poly.Eval(p.alpha))
 }
 
 func (p *Protocol) TagVerify(stored *StoredBatch) bool {
@@ -128,7 +135,7 @@ func (p *Protocol) TagVerify(stored *StoredBatch) bool {
 }
 
 func (p *Protocol) Challenge(c int) Challenge {
-	return p.ChallengeFromSeed([]byte("xutifs26:commit-reveal:default"), c)
+	return p.ChallengeFromSeed(mustRandomBytes("xutifs26 challenge seed"), c)
 }
 
 func (p *Protocol) ChallengeFromSeed(seed []byte, c int) Challenge {
@@ -198,6 +205,14 @@ func (p *Protocol) Verify(stored *StoredBatch, chal Challenge, proof *Proof) boo
 
 func xuLeaf(tag *bn256.G1) []byte {
 	return benchcore.HashBytes("xutifs26:leaf", tag.Marshal())
+}
+
+func mustRandomBytes(context string) []byte {
+	out, err := benchcore.RandomBytes(nil, 32)
+	if err != nil {
+		panic(fmt.Sprintf("%s: %v", context, err))
+	}
+	return out
 }
 
 func uniqueIndices(label string, seed []byte, c, n int) []int {

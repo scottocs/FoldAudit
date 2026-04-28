@@ -76,12 +76,19 @@ func (p *Protocol) Store(data [][][]*big.Int) (*StoredBatch, error) {
 				return nil, fmt.Errorf("file %d block %d: expected %d sectors", i, j, p.S)
 			}
 			file.Blocks[j] = benchcore.NewPoly(data[i][j])
-			body := benchcore.G1Add(hashIndex(file.FileID, j), benchcore.CommitG1(p.SRSG1, file.Blocks[j]))
+			body := benchcore.G1Add(hashIndex(file.FileID, j), p.ownerCommit(file.Blocks[j]))
 			file.Tags[j] = benchcore.G1Mul(body, p.x)
 		}
 		out.Files[i] = file
 	}
 	return out, nil
+}
+
+func (p *Protocol) ownerCommit(poly benchcore.Poly) *bn256.G1 {
+	if p.alpha == nil {
+		panic("zhangtpds23: missing data-owner trapdoor for Store")
+	}
+	return benchcore.G1Base(poly.Eval(p.alpha))
 }
 
 func (p *Protocol) TagVerify(stored *StoredBatch) bool {
@@ -103,7 +110,7 @@ func (p *Protocol) TagVerify(stored *StoredBatch) bool {
 }
 
 func (p *Protocol) Challenge(c int) Challenge {
-	return p.ChallengeFromSeed([]byte("zhangtpds23:default-challenge"), c)
+	return p.ChallengeFromSeed(mustRandomBytes("zhangtpds23 challenge seed"), c)
 }
 
 func (p *Protocol) ChallengeFromSeed(seed []byte, c int) Challenge {
@@ -124,9 +131,6 @@ func (p *Protocol) ChallengeFromSeed(seed []byte, c int) Challenge {
 		points[i] = benchcore.ScalarFromBytes("zhangtpds23:challenge:r", seed, benchcore.IntBytes(i))
 	}
 	z := benchcore.ScalarFromBytes("zhangtpds23:challenge:z", seed, benchcore.IntBytes(c))
-	if benchcore.Sub(p.alpha, z).Sign() == 0 {
-		z = benchcore.Add(z, benchcore.One())
-	}
 	return Challenge{Indices: indices, Coeffs: coeffs, Points: points, Gamma: benchcore.ScalarFromBytes("zhangtpds23:challenge:gamma", seed), Z: z, Seed: append([]byte(nil), seed...)}
 }
 
@@ -166,15 +170,14 @@ func (p *Protocol) Prove(stored *StoredBatch, chal Challenge) (*Proof, error) {
 	}
 	ztAtZ := benchcore.ZPoly(chal.Points).Eval(chal.Z)
 	L := sumBetaDiff.Sub(Hb.Scale(ztAtZ))
-	den, err := benchcore.Inv(benchcore.Sub(p.alpha, chal.Z))
-	if err != nil {
-		return nil, err
+	LQuotient, LRem := L.DivLinear(chal.Z)
+	if LRem.Sign() != 0 {
+		return nil, fmt.Errorf("folded quotient polynomial has nonzero remainder")
 	}
-	WPrime := benchcore.G1Base(benchcore.Mul(L.Eval(p.alpha), den))
 	return &Proof{
 		SigmaPrime: sigmaPrime,
-		W:          benchcore.G1Base(Hb.Eval(p.alpha)),
-		WPrime:     WPrime,
+		W:          benchcore.CommitG1(p.SRSG1, Hb),
+		WPrime:     benchcore.CommitG1(p.SRSG1, LQuotient),
 		E:          E,
 	}, nil
 }
@@ -223,6 +226,14 @@ func zExcept(points []*big.Int, skip int) benchcore.Poly {
 
 func hashIndex(fileID []byte, index int) *bn256.G1 {
 	return benchcore.HashToG1Bytes("zhangtpds23:H", fileID, benchcore.IntBytes(index))
+}
+
+func mustRandomBytes(context string) []byte {
+	out, err := benchcore.RandomBytes(nil, 32)
+	if err != nil {
+		panic(fmt.Sprintf("%s: %v", context, err))
+	}
+	return out
 }
 
 func uniqueIndices(label string, seed []byte, c, n int) []int {

@@ -78,7 +78,7 @@ func (p *Protocol) Store(blocks [][]*big.Int) (*StoredData, error) {
 			return nil, fmt.Errorf("block %d: expected %d sectors", i, p.S)
 		}
 		out.Blocks[i] = benchcore.NewPoly(block)
-		out.Tags[i] = benchcore.CommitG1(p.SRS, out.Blocks[i])
+		out.Tags[i] = p.ownerCommit(out.Blocks[i])
 		leaves[i] = yuLeaf(out.Tags[i])
 	}
 	tree, err := benchcore.NewMerkleTree(leaves)
@@ -103,8 +103,15 @@ func (p *Protocol) StoreBatch(files [][][]*big.Int) (*StoredBatch, error) {
 	return out, nil
 }
 
+func (p *Protocol) ownerCommit(poly benchcore.Poly) *bn256.G1 {
+	if p.psi == nil {
+		panic("yutc25: missing data-owner trapdoor for Store")
+	}
+	return benchcore.G1Base(poly.Eval(p.psi))
+}
+
 func (p *Protocol) Challenge(c int) Challenge {
-	return p.ChallengeFromKeys([]byte("default-k1"), []byte("default-k2"), c)
+	return p.ChallengeFromKeys(mustRandomBytes("yutc25 challenge k1"), mustRandomBytes("yutc25 challenge k2"), c)
 }
 
 func (p *Protocol) ChallengeFromKeys(k1, k2 []byte, c int) Challenge {
@@ -129,8 +136,8 @@ func (p *Protocol) BatchChallenge(files, c int) BatchChallenge {
 	out := BatchChallenge{FileChallenges: make([]Challenge, files)}
 	for i := range out.FileChallenges {
 		out.FileChallenges[i] = p.ChallengeFromKeys(
-			[]byte(fmt.Sprintf("batch-k1-%d", i)),
-			[]byte(fmt.Sprintf("batch-k2-%d", i)),
+			mustRandomBytes(fmt.Sprintf("yutc25 batch challenge k1 file %d", i)),
+			mustRandomBytes(fmt.Sprintf("yutc25 batch challenge k2 file %d", i)),
 			c,
 		)
 	}
@@ -213,6 +220,14 @@ func (p *Protocol) VerifyBatch(stored *StoredBatch, chal BatchChallenge, proof *
 
 func yuLeaf(tag *bn256.G1) []byte {
 	return benchcore.HashBytes("yutc25:tag-imht", tag.Marshal())
+}
+
+func mustRandomBytes(context string) []byte {
+	out, err := benchcore.RandomBytes(nil, 32)
+	if err != nil {
+		panic(fmt.Sprintf("%s: %v", context, err))
+	}
+	return out
 }
 
 func uniqueIndices(label string, seed []byte, c, n int) []int {

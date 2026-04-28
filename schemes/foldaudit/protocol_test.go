@@ -62,6 +62,32 @@ func TestHonestFoldAuditRoundAccepts(t *testing.T) {
 	}
 }
 
+func TestProofGenDoesNotUseTrapdoor(t *testing.T) {
+	protocol := testProtocol(t, 14)
+	data, err := protocol.RandomDataset()
+	if err != nil {
+		t.Fatalf("RandomDataset failed: %v", err)
+	}
+	stored, err := protocol.Store(data)
+	if err != nil {
+		t.Fatalf("Store failed: %v", err)
+	}
+	chal, err := protocol.Challenge()
+	if err != nil {
+		t.Fatalf("Challenge failed: %v", err)
+	}
+
+	protocol.tau = nil
+
+	proof, err := protocol.ProofGen(stored, chal)
+	if err != nil {
+		t.Fatalf("ProofGen failed without trapdoor: %v", err)
+	}
+	if !protocol.Verify(stored, chal, proof) {
+		t.Fatal("Verify rejected proof generated without trapdoor")
+	}
+}
+
 func TestTamperedProofFieldsAreRejected(t *testing.T) {
 	protocol := testProtocol(t, 12)
 	data, _ := protocol.RandomDataset()
