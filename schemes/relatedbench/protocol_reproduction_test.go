@@ -4,11 +4,11 @@ import (
 	"math/big"
 	"testing"
 
-	"pdp26/schemes/benchcore"
-	"pdp26/schemes/miaoscis2026"
-	"pdp26/schemes/xutifs26"
-	"pdp26/schemes/yutc25"
-	"pdp26/schemes/zhangtpds23"
+	"foldaudit/schemes/benchcore"
+	"foldaudit/schemes/miaoscis2026"
+	"foldaudit/schemes/xutifs26"
+	"foldaudit/schemes/yutc25"
+	"foldaudit/schemes/zhangtpds23"
 )
 
 func TestXuTIFS26ProtocolRound(t *testing.T) {

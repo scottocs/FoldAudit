@@ -6,7 +6,7 @@ import (
 
 	bn256 "github.com/ethereum/go-ethereum/crypto/bn256/cloudflare"
 
-	"pdp26/schemes/benchcore"
+	"foldaudit/schemes/benchcore"
 )
 
 type Protocol struct {

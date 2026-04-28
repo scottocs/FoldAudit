@@ -1,4 +1,4 @@
-module pdp26
+module foldaudit
 
 go 1.24.3
 

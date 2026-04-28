@@ -290,17 +290,19 @@ Polynomial Commitment, Vector Commitment, Data Management
 % 第四段：由于文件大，data integrity通常通过抽样检查
 % 第五段：抽样过程中如果抽样点、掩码不合理，会导致隐私泄露
 % 第六段：为解决上述问题，我们提出FoldAudit
-The exponential growth of global data generation has driven a paradigm shift toward decentralized and cloud-based storage architectures. By outsourcing data to remote storage providers, individuals and organizations significantly reduce local hardware maintenance costs while benefiting from elastic scalability, geographic redundancy, and high availability. However, this outsourcing model inherently relinquishes physical control over the stored assets, exposing them to multifaceted risks such as hardware degradation, silent data corruption, and economically motivated data deletion or compression by untrusted storage providers. To mitigate these threats and restore trust in distributed storage ecosystems, Provable Data Possession (PDP) and Proof of Retrievability (PoR) schemes have emerged as foundational cryptographic primitives. These protocols enable data owners or delegated auditors to efficiently verify the integrity of outsourced data without retrieving the entire dataset, thereby ensuring continuous data availability, regulatory compliance, and accountability in modern storage networks.
+The exponential growth of global data generation has driven a paradigm shift toward decentralized and cloud-based storage architectures. By outsourcing data to remote storage providers, individuals and organizations significantly reduce local hardware maintenance costs while benefiting from elastic scalability, geographic redundancy, and high availability. However, this outsourcing model inherently relinquishes physical control over the stored assets, exposing them to multifaceted risks such as hardware degradation, silent data corruption, and economically motivated data deletion or compression by untrusted storage providers. To mitigate these threats and restore trust in distributed storage ecosystems, Provable Data Possession (PDP)~\cite{Ateniese2007PDP} and Proof of Retrievability (PoR)~\cite{Juels2007POR,Shacham2008POR} schemes have emerged as foundational cryptographic primitives. This work focuses on the PDP setting: data owners or delegated auditors efficiently check possession and integrity of sampled outsourced blocks without retrieving the entire dataset. Unlike PoR protocols, FoldAudit does not claim full-file retrievability or provide an extractor that reconstructs the outsourced files.
 
-Recent advancements in cryptographic primitives have significantly optimized the efficiency and scalability of data integrity auditing. Among these, Polynomial Commitment Schemes (PCS), particularly the Kate-Zaverucha-Goldberg (KZG) construction, have been widely adopted in state-of-the-art PDP designs. By encoding data blocks as coefficients of low-degree polynomials over a finite field, PCS enables compact, constant-size commitments and supports homomorphic aggregation of multiple block tags. This algebraic structure allows cloud servers to generate succinct proofs of possession through polynomial evaluation and quotient computation, while verifiers can validate correctness using a minimal number of bilinear pairings. Consequently, polynomial commitments have become the cornerstone of lightweight, publicly verifiable auditing frameworks, drastically reducing communication bandwidth and on-chain storage overhead compared to traditional hash-based or signature-based approaches. Their compatibility with structured reference strings (SRS) and efficient synthetic division algorithms further positions them as ideal candidates for large-scale storage verification.
+Recent advancements in cryptographic primitives have significantly optimized the efficiency and scalability of data integrity auditing. Among these, Polynomial Commitment Schemes (PCS), particularly the Kate-Zaverucha-Goldberg (KZG) construction~\cite{Kate2010KZG}, have been widely adopted in state-of-the-art PDP designs. By encoding data blocks as coefficients of low-degree polynomials over a finite field, PCS enables compact, constant-size commitments and supports homomorphic aggregation of multiple block tags. This algebraic structure allows cloud servers to generate succinct proofs of possession through polynomial evaluation and quotient computation, while verifiers can validate correctness using a minimal number of bilinear pairings. Related vector-commitment and accumulator techniques further show the importance of succinct authenticated openings and batch aggregation for large authenticated data structures~\cite{Catalano2013VC,Boneh2019Batching,Luo2025Cauchy}. Consequently, polynomial commitments have become the cornerstone of lightweight, publicly verifiable auditing frameworks, drastically reducing communication bandwidth and on-chain storage overhead compared to traditional hash-based or signature-based approaches. Their compatibility with structured reference strings (SRS) and efficient synthetic division algorithms further positions them as ideal candidates for large-scale storage verification.
 
-Despite these cryptographic improvements, practical storage deployments frequently involve massive-scale data repositories comprising thousands of files distributed across multiple storage nodes, providers, or geographic regions. Conventional PDP protocols process each file independently, requiring separate proof generation, transmission, and verification rounds for every audited dataset. This linear scaling introduces severe computational and economic bottlenecks, particularly in blockchain-assisted auditing systems where smart contract execution costs (gas) and on-chain proof storage scale directly with the number of files. As audit frequencies increase and batch sizes grow, the cumulative overhead of independent verifications rapidly degrades system throughput, inflates operational expenses, and strains verifier resources. Therefore, developing a secure and efficient multi-file batch verification mechanism that compresses multiple integrity checks into a single, constant-size cryptographic operation has become a critical research imperative for scalable decentralized storage.
+Despite these cryptographic improvements, practical storage deployments frequently involve massive-scale data repositories comprising thousands of files distributed across multiple storage nodes, providers, or geographic regions. Conventional PDP protocols process each file independently, requiring separate proof generation, transmission, and verification rounds for every audited dataset. This linear scaling introduces severe computational and economic bottlenecks, particularly in blockchain-assisted and multi-cloud auditing systems where verifier computation, smart contract execution costs, and on-chain audit metadata grow with the number of files or providers~\cite{Zhu2012TPDS,Yang2013TPDS,ZhangTPDS23}. As audit frequencies increase and batch sizes grow, the cumulative overhead of independent verifications rapidly degrades system throughput, inflates operational expenses, and strains verifier resources. Therefore, developing a secure and efficient multi-file batch verification mechanism that compresses multiple polynomial-opening checks into a single folded pairing equation, while keeping the proof transcript explicit in the number of audited files and challenged blocks, has become a critical research imperative for scalable decentralized storage.
 
-Given the substantial size of individual files in real-world applications, auditing every data block is computationally prohibitive and economically unviable. To address this challenge, modern PDP schemes universally employ probabilistic sampling strategies. During an audit round, the verifier randomly selects a subset of data blocks and assigns independent random coefficients to construct a linear combination of challenged sectors. This approach reduces the proof size and verification complexity from linear $O(n)$ to constant or logarithmic $O(c)$ with respect to the total number of blocks, where $c \ll n$ denotes the challenge size. By carefully calibrating the number of sampled blocks, auditors can achieve arbitrarily high detection probabilities for data corruption while maintaining minimal communication and computation overhead. The randomness of the challenge set ensures that malicious providers cannot precompute proofs or selectively store only frequently accessed blocks without facing a high risk of detection.
+In addition to large batch size, real deployments also exhibit frequent file-set churn. Users continuously upload new backups, archive old files, rotate logs, and remove expired data under storage policies. Since integrity audits are usually executed periodically rather than immediately after every file operation, the verifier must audit the current active file set at each audit epoch. A practical batch-PDP protocol therefore needs two capabilities simultaneously: it should absorb file additions and removals without rebuilding a global commitment for all surviving files, and it should verify many active files together once a scheduled audit is triggered.
+
+Given the substantial size of individual files in real-world applications, auditing every data block is computationally prohibitive and economically unviable. To address this challenge, modern PDP schemes universally employ probabilistic sampling strategies~\cite{Ateniese2007PDP,Wang2011TPDS,Wang2013TC}. During an audit round, the verifier randomly selects a subset of data blocks and assigns independent random coefficients to construct a linear combination of challenged sectors. This approach reduces the audit work from linear in the total number of blocks to work governed by the challenge size $c\ll n$; with Merkle-authenticated tags, communication contains the challenged tags and authentication paths and is therefore not constant in $c$. By carefully calibrating the number of sampled blocks, auditors can achieve arbitrarily high detection probabilities for data corruption while maintaining minimal communication and computation overhead. The randomness of the challenge set ensures that malicious providers cannot precompute proofs or selectively store only frequently accessed blocks without facing a high risk of detection.
 
 However, the introduction of probabilistic sampling and homomorphic aggregation introduces subtle yet critical privacy vulnerabilities. In many existing batch auditing designs, challenge generation mechanisms, evaluation points, and masking techniques are either oversimplified or structurally coupled across files. If challenge points are shared, folding weights are predictable, or masking values are reused, an honest-but-curious verifier or public ledger observer can exploit the linear algebraic structure of aggregated evaluations. Through cross-round correlation analysis or linear system inversion on publicly disclosed challenge-response transcripts, adversaries may reconstruct underlying polynomial evaluations $f(r_i)$ or even infer sensitive sector values. Such privacy leakage fundamentally contradicts the confidentiality requirements of modern cloud and decentralized storage, highlighting the necessity of integrating fresh one-time masking directly into the batch verification algebraic structure.
 
-To address the aforementioned challenges, we propose \textbf{FoldAudit}, a novel batch-verifiable PDP scheme that simultaneously achieves efficient multi-file verification, tight cryptographic soundness, and practical evaluation masking. FoldAudit introduces a layered algebraic folding architecture: (i) independent per-file challenge points $\{r_i\}$ to structurally isolate file-specific quotient polynomials and prevent cross-file pole cancellation; (ii) a Fiat-Shamir derived random folding scalar $\rho$ applied after the proof statement is fixed, ensuring that batch aggregation remains algebraically unpredictable and bias-resistant; and (iii) additive one-time masking $\tilde y_i=y_i+\mu_i$ with a public mask commitment $R_i=g^{\mu_i}$ and a Schnorr proof of knowledge for extractability. The folded KZG relation yields a soundness error bounded by $\epsilon \leq \frac{m-1}{p}+\mathsf{negl}(\lambda)$ for challenged corrupted data, guaranteeing that adversarial cross-file cancellation is detected with overwhelming probability. Theoretical analysis and experimental evaluations demonstrate that FoldAudit keeps verification dominated by challenged-tag aggregation, lightweight Schnorr mask checks, and a single folded pairing check, supports stateless dynamic file updates without global state recomputation, and provides privacy when challenged evaluations have sufficient min-entropy against enumeration by honest-but-curious auditors.
+To address the aforementioned challenges, we propose \textbf{FoldAudit}, a novel batch-verifiable PDP scheme that simultaneously achieves efficient multi-file verification, tight cryptographic soundness, and practical evaluation masking. FoldAudit introduces a layered algebraic folding architecture: (i) independent per-file challenge points $\{r_i\}$ to structurally isolate file-specific quotient polynomials and prevent cross-file pole cancellation; (ii) a Fiat-Shamir derived random folding scalar $\rho$ applied after the proof statement is fixed, ensuring that batch aggregation remains algebraically unpredictable and bias-resistant; and (iii) additive one-time masking $\tilde y_i=y_i+\mu_i$ with a public mask commitment $R_i=g^{\mu_i}$ and a Schnorr proof of knowledge for extractability. For dynamic file sets, FoldAudit keeps a separate Merkle root and KZG-tag collection for each file, so adding a file creates only its own tags and root, while removing a file only removes its root from the active audit set. The folded KZG relation yields a soundness error bounded by $\epsilon \leq \frac{m-1}{p}+\mathsf{negl}(\lambda)$ for challenged corrupted data, guaranteeing that adversarial cross-file cancellation is detected with overwhelming probability. Theoretical analysis and experimental evaluations demonstrate that FoldAudit keeps verification dominated by challenged-tag aggregation, lightweight Schnorr mask checks, and a single folded pairing check, supports stateless dynamic file updates without global state recomputation, and provides privacy when challenged evaluations have sufficient min-entropy against enumeration by honest-but-curious auditors.
 
 
 
@@ -478,6 +480,9 @@ The provable data possession scheme for multiple files operates through five pol
 \subsection{Security Model}
 \label{sec:security_model}
 The security of the proposed batch-PDP scheme is formalized through three core properties: correctness, soundness, and privacy.
+
+\textbf{Scope of Guarantee}:
+FoldAudit is a spot-checking PDP protocol. Its soundness statement concerns possession of the challenged aggregate data in an audit round and the probability that corrupted or unavailable challenged chunks are detected. It does not provide a PoR-style retrievability guarantee, does not prove that the entire outsourced file can be reconstructed from audit transcripts, and does not replace erasure coding or extractor-based availability mechanisms.
 
 \textbf{Correctness}: If all parties (DO, CS, and V) execute the protocol honestly according to the specified algorithms, the $\mathsf{Verify}$ algorithm outputs $accept$ with probability $1$.
 
@@ -859,13 +864,15 @@ For values outside the verifier's tested candidate set, recovering $\mu_i$ from 
 
 \subsection{Complexity Analysis}
 \label{sec:complexity_analysis}
-We measure computational overhead in terms of group exponentiations ($E$) and bilinear pairings ($P$). Field arithmetic, hash evaluations, Fiat--Shamir transcript hashing, group multiplications, and Merkle-path hashing are omitted from the group-operation count. Communication overhead is measured in bits using $|p|$, $|\GG_1|$, and $|h|$ for a field element, a $\GG_1$ element, and a hash digest, respectively.
+We measure computational overhead in terms of group exponentiations ($E$) and bilinear pairings ($P$). Field arithmetic, hash evaluations, Fiat--Shamir transcript hashing, group multiplications, and Merkle-path hashing are omitted from the group-operation count. When the source code computes a KZG-style commitment with an SRS, we count the scalar multiplication for each committed coefficient. Communication overhead is measured in bits using $|p|$, $|\GG_1|$, and $|h|$ for a field element, a $\GG_1$ element, and a hash digest, respectively.
+
+In the evaluation section, we use \emph{audit overhead} to denote the online cost of one audit round after the files have already been outsourced and tagged. Thus, audit overhead is defined as the sum of the server-side $\ProofGen$ cost and the verifier-side $\Verify$ cost; it does not include the one-time $\Store$ cost.
 
 \paragraph{Computation Complexity.} 
 \begin{itemize}
-    \item $\Store$ Algorithm. Since the DO holds the trapdoor $\tau$, each tag $\sigma_{i,j}=g^{f_{i,j}(\tau)}$ costs one exponentiation after evaluating $f_{i,j}(\tau)$ in the field. Across $m$ files and $n$ chunks, the storage-side group cost is
+    \item $\Store$ Algorithm. In the implementation, each tag $\sigma_{i,j}=g^{f_{i,j}(\tau)}$ is computed by committing the $s$ coefficients of $f_{i,j}(X)$ against the SRS, i.e., by calling \texttt{CommitPolynomial}. Thus each tag costs $sE$. Across $m$ files and $n$ chunks, the storage-side group cost is
     \[
-        mnE .
+        mnsE .
     \]
     \item $\ProofGen$ Algorithm. For each file, after forming the aggregated polynomial $f_i(X)=\sum_{k=0}^{s-1}a_{i,k}X^k$ in the field, the CS computes the aggregate commitment as $b_i=g^{f_i(\tau)}=\prod_{k=0}^{s-1}(g^{\tau^k})^{a_{i,k}}$ using the SRS. This costs $sE$, rather than $cE$, and is equivalent to $\prod_{j\in J}\sigma_{i,j}^{v_{i,j}}$ by the homomorphism of KZG commitments. The CS also computes the mask commitment $R_i=g^{\mu_i}$ using $E$, the quotient commitment $C_{w_i}=g^{w_i(\tau)}$ using $(s-1)E$, and the Schnorr commitment $A_i=g^{a_i}$ using $E$. Thus proof generation costs
     \[
@@ -877,17 +884,21 @@ We measure computational overhead in terms of group exponentiations ($E$) and bi
         (2ms+m)E .
     \]
     Since the audit challenge size satisfies $c>s$ in the intended parameter regime, computing $b_i$ from the coefficient vector of $f_i$ keeps proof generation at $O(msE)$ rather than $O(mcE)$.
-    \item $\Verify$ Algorithm. The verifier recomputes $\hat b_i=\prod_{j\in J}\sigma_{i,j}^{v_{i,j}}$ for all files using $mcE$. It verifies the Schnorr mask proofs using $2mE$, constructs the folded accumulators $L=\prod_i(b_iR_ig^{-\tilde y_i}C_{w_i}^{r_i})^{\rho^{i-1}}$ and $R=\prod_iC_{w_i}^{\rho^{i-1}}$ using $(4m+1)E$ with straightforward multi-exponentiation accounting, and checks one two-pairing equation. Therefore verification costs
+    \item $\Verify$ Algorithm. The verifier recomputes $\hat b_i=\prod_{j\in J}\sigma_{i,j}^{v_{i,j}}$ for all files using $mcE$. It verifies the Schnorr mask proofs using $2mE$, constructs the folded accumulators $L=\prod_i(b_iR_ig^{-\tilde y_i}C_{w_i}^{r_i})^{\rho^{i-1}}$ and $R=\prod_iC_{w_i}^{\rho^{i-1}}$ using $4mE$, and checks one two-pairing equation. Therefore verification costs
     \[
-        (mc+6m+1)E+2P .
+        (mc+6m)E+2P .
     \]
 \end{itemize}
+
+\paragraph{Suitability for Lightweight Devices.}
+FoldAudit is lightweight for verifiers and data owners in the sense that they do not store outsourced files locally and verification uses one folded pairing equation after tag aggregation and mask checks. A resource-constrained device can therefore act as a data owner that performs one-time tag generation before outsourcing, or as a delegated verifier when the audit batch and challenge size are moderate. However, FoldAudit is not intended to make the untrusted storage server lightweight: $\ProofGen$ requires access to challenged file sectors and performs per-file polynomial aggregation, quotient computation, and group exponentiations. In deployments with very constrained auditors, the most suitable architecture is to let the lightweight device keep only file identifiers, Merkle roots, and audit policies, while a gateway, edge node, blockchain contract, or third-party auditor performs the heavier tag aggregation and pairing verification.
 
 
 
 
 
 \paragraph{Communication Complexity.}
+FoldAudit reduces the expensive algebraic verification to one folded pairing equation, but the audit proof itself is not constant-size in the batch size $m$ or challenge size $c$. The transcript intentionally carries per-file masking and quotient commitments, challenged tags, and Merkle authentication paths so that tag membership and aggregation can be checked explicitly.
 
 
 \begin{itemize}
@@ -912,14 +923,13 @@ We measure computational overhead in terms of group exponentiations ($E$) and bi
 
 
 \subsection{Dynamic Audit-Set Management}
-The scheme natively supports file addition and removal from the active audit set through independent per-file KZG commitments and modular Merkle trees. Crucially, $\ProofGen$ and $\Verify$ are stateless per audit round; they operate on the current active file set without maintaining persistent or incremental proof state. Dynamic operations thus only affect the $\Store$ phase and metadata synchronization.
+Dynamic support is a central requirement in practical PDP systems~\cite{Erway2009DPDP,Wang2011TPDS,Yang2013TPDS,XuTIFS26}. In many outsourced-storage services, files are added and deleted much more frequently than audit rounds are executed: a user may update the active dataset continuously, while the auditor checks integrity hourly, daily, or according to a compliance schedule. FoldAudit natively supports this setting through independent per-file KZG commitments and modular Merkle trees. Crucially, $\ProofGen$ and $\Verify$ are stateless per audit round; they operate on the current active file set without maintaining persistent or incremental proof state. Dynamic operations thus only affect the $\Store$ phase and metadata synchronization.
 
 
-When the DO uploads a new file $F_{m+1}$, it encodes each chunk into $f_{m+1,j}(X)$, computes tags $\sigma_{m+1,j}=g^{f_{m+1,j}(\tau)}$, and constructs a fresh Merkle tree yielding root $\Gamma_{m+1}$. The data and tags are outsourced to the CS, while $\Gamma_{m+1}$ is securely shared with the verifier. The active batch size increments to $m \leftarrow m+1$. Subsequent audits automatically incorporate $F_{m+1}$ via the expanded index collection and Merkle root set.
+When the DO uploads a new file $F_{m+1}$, it encodes each chunk into $f_{m+1,j}(X)$, computes tags $\sigma_{m+1,j}=g^{f_{m+1,j}(\tau)}$, and constructs a fresh Merkle tree yielding root $\Gamma_{m+1}$. The data and tags are outsourced to the CS, while $\Gamma_{m+1}$ is securely shared with the verifier. The active batch size increments to $m \leftarrow m+1$. No existing file tag, Merkle root, quotient witness, or global accumulator is recomputed. At the next scheduled audit, $F_{m+1}$ is automatically incorporated through the expanded active file identifier set and Merkle root set.
 
 
-To remove $F_{i_{\text{del}}}$ from subsequent audits, the DO and V revoke $\Gamma_{i_{\text{del}}}$ from the active metadata set and exclude the corresponding file identifier from future challenges. The CS may reclaim the associated data, tags, and Merkle nodes according to the storage policy, but this protocol action is only an audit-set update and does not prove physical erasure. Surviving files simply skip the removed identifier in subsequent audit loops, incurring zero recomputation of tags or Merkle roots.
-The active batch size decreases by one, and future $\ProofGen$ executions simply iterate over the reduced active set.
+To remove $F_{i_{\text{del}}}$ from subsequent audits, the DO and V revoke $\Gamma_{i_{\text{del}}}$ from the active metadata set and exclude the corresponding file identifier from future challenges. The CS may reclaim the associated data, tags, and Merkle nodes according to the storage policy, but this protocol action is only an audit-set update and does not prove physical erasure. Surviving files simply skip the removed identifier in subsequent audit loops, incurring zero recomputation of tags or Merkle roots. The active batch size decreases by one, and future $\ProofGen$ executions simply iterate over the reduced active set.
 
 \textit{Complexity of Dynamic Operations.} Adding a single file requires $\mathcal{O}(nE)$ time for tag generation, as implied by the \textsf{Store} algorithm. Removing a file from the active audit set only updates the metadata registry and requires no tag generation, Merkle reconstruction for surviving files, SRS regeneration, trapdoor rotation, or global commitment recomputation. Since proof generation is challenge-driven and stateless, dynamic updates incur overhead strictly at the storage and metadata layers. Consequently, the \textsf{ProofGen} and \textsf{Verify} algorithms retain the same complexity as analyzed in Section~\ref{sec:complexity_analysis}.
 
@@ -928,6 +938,10 @@ The active batch size decreases by one, and future $\ProofGen$ executions simply
 
 
 Recent years have witnessed significant advances in provable data possession (PDP) schemes for cloud and decentralized storage systems. The works most closely related to FoldAudit differ in their batching model, privacy treatment, and support for dynamic data.
+
+The foundational PDP model of Ateniese et al.~\cite{Ateniese2007PDP} introduced probabilistic possession checks with compact authenticators, while PoR schemes by Juels and Kaliski~\cite{Juels2007POR} and Shacham and Waters~\cite{Shacham2008POR} formalized stronger retrievability-oriented guarantees. Dynamic and publicly auditable variants later extended the basic model to support updates and third-party verification. Erway et al.~\cite{Erway2009DPDP} introduced dynamic PDP, Wang et al.~\cite{Wang2011TPDS} studied public auditability with data dynamics, and subsequent IEEE works further improved privacy-preserving public auditing, batch auditing, identity-based auditing, shared-data auditing, and multi-cloud or multi-copy verification~\cite{Wang2013TC,Zhu2012TPDS,Yang2013TPDS,Wang2014TCC,Yu2017TIFS}. These lines establish the importance of sampling-based integrity checking, but most of them either verify files independently or rely on homomorphic authenticators rather than polynomial-opening batch equations.
+
+Polynomial commitments and vector commitments provide another line of techniques for succinct authenticated openings. KZG commitments~\cite{Kate2010KZG} give constant-size commitments and pairing-based evaluation proofs for low-degree polynomials. Vector commitments~\cite{Catalano2013VC}, accumulator batching~\cite{Boneh2019Batching}, and recent batch-updatable vector commitments~\cite{Luo2025Cauchy} show how algebraic commitments can compress authentication and update checks in large authenticated data structures. FoldAudit builds on this algebraic perspective but targets a PDP-specific setting where each file has authenticated challenged tags, masked evaluations, and a folded multi-file opening check.
 
 Xu et al.~\cite{XuTIFS26} proposed MPA, a lightweight and updatable auditing scheme that combines polynomial commitments with Merkle authentication for decentralized multi-copy storage. MPA supports full aggregation across files and providers and uses a blockchain-assisted commit-and-reveal procedure to derive unpredictable challenges. Its proof-generation cost is dominated by a degree-$(s-1)$ KZG witness, while the Merkle layer gives efficient block-level updates. However, the multi-file verification equation aggregates all local proofs at a shared evaluation point $r$. Therefore, the batch check does not provide independent per-file evaluation points or an explicit random-folding soundness bound for cross-file cancellation; it verifies a globally aggregated opening together with Merkle membership paths.
 
@@ -986,14 +1000,14 @@ Despite these advances, existing schemes leave at least one of the following gap
 \end{table*}
 
 
-To facilitate a direct comparison, we adopt the unified notation throughout this section: $m$ files in a single audit batch, each comprising $n$ chunks, where each chunk is algebraically encoded as a polynomial of degree $s-1$ (i.e., $s$ sectors per chunk). Let $c$ denote the number of challenged chunks per file. We count only expensive group exponentiations and pairings; field operations, group multiplications, PRF calls, hashes, and Merkle-path hashing are omitted from Table~\ref{tab:computation}. For FoldAudit, the table reports the additive-mask version with Schnorr mask PoK in Algorithms~\ref{alg:proofgen} and~\ref{alg:verify}. For ZhangTPDS23 and XuTIFS26, which are originally parameterized by the number of replicas/providers, the table reports the normalized single-replica case $N=1$ so that the comparison focuses on multi-file integrity rather than replication redundancy. For MiaoSCIS2026, $m$ denotes the number of keyword-matched files participating in the audit.
+To facilitate a direct comparison, we adopt the unified notation throughout this section: $m$ files in a single audit batch, each comprising $n$ chunks, where each chunk is algebraically encoded as a polynomial of degree $s-1$ (i.e., $s$ sectors per chunk). Let $c$ denote the number of challenged chunks per file. We count only expensive group exponentiations and pairings; field operations, group additions, PRF calls, byte hashes, and Merkle-path hashing are omitted from Table~\ref{tab:computation}. The counts below follow the source implementations under \texttt{schemes/}: SRS-based commitment routines count one scalar multiplication per committed coefficient, while auxiliary keyword/hash metadata not represented by $(m,n,s,c)$ is omitted. For FoldAudit, the table reports the additive-mask version with Schnorr mask PoK in Algorithms~\ref{alg:proofgen} and~\ref{alg:verify}. For ZhangTPDS23 and XuTIFS26, which are originally parameterized by the number of replicas/providers, the table reports the normalized single-replica case $N=1$ so that the comparison focuses on multi-file integrity rather than replication redundancy. For MiaoSCIS2026, $m$ denotes the number of keyword-matched files participating in the audit.
 
 % \paragraph{}
 \noindent\textit{1.1) Computation Complexity of Yu et al.~\cite{YuTC25}}
 \begin{itemize}
-\item \textbf{$\Store$ Algorithm.}  For file \(i\) and chunk \(j\), the data owner evaluates the chunk polynomial at the secret point and computes the homomorphic tag as ours. Therefore, the storage computation is \(mnE\).
+\item \textbf{$\Store$ Algorithm.}  In the source, each chunk tag is computed by committing the $s$ coefficients of the chunk polynomial against the SRS. Therefore, each tag costs $sE$, and the storage computation for $m$ independent files is \(mnsE\).
 \item \textbf{$\ProofGen$ Algorithm.} The only counted group exponentiation is the privacy mask \(B=g^\beta\). Therefore, over \(m\) independent files, the computation is \(mE\).
-\item \textbf{$\Verify$ Algorithm.}  For each file, the verifier reconstructs \(H_Z\) from the \(s\)-coefficient quotient polynomial and checks the privacy-enhanced verification equation involving \(B^\eta\), \(c\) challenged tags, \(H_Z^{-z}\), and \(\mathrm{HHF}(P_{\mathrm{prf}}(z))\). Following the operation count reported in YuTC25, this costs \((s+c+4)E\) per independent audit. Thus, auditing \(m\) files independently costs \(m(s+c+4)E\).
+\item \textbf{$\Verify$ Algorithm.}  For each file, the verifier aggregates the \(c\) challenged tags, computes \(B^\eta\), commits the quotient polynomial through \texttt{CommitG1}, computes the shifted quotient commitment loop in the source, and forms the terms \(H_Z^{-z}\) and \(g^{P_{\mathrm{prf}}(z)}\). Since the quotient has at most \(s-1\) coefficients, this costs \((c+2s+1)E\) per independent audit. Thus, auditing \(m\) files independently costs \(m(c+2s+1)E\).
 \end{itemize}
 
 \noindent\textit{1.2) Communication Complexity of Yu et al.~\cite{YuTC25}}
@@ -1001,19 +1015,17 @@ To facilitate a direct comparison, we adopt the unified notation throughout this
 \item \textbf{$\Store$ Algorithm.} The data owner uploads \(mns\) field sectors and \(mn\) homomorphic tags to the server, and shares one Merkle
 root per file with the verifier.  Hence the one-time storage communication is \(mns|p|+mn|G_1|+m|h|\).
 \item \textbf{$\ProofGen$ Algorithm.}  For each file, the response
-contains the \(s\)-coefficient quotient polynomial, one evaluation value,
-\(c\) challenged tags, one mask \(B\), and \(c\) Merkle paths of length $\log n$.  Across \(m\) files, the proof communication is
-\(m(s+1)|p|+m(c+1)|\GG_1|+mc\log n|h|\).
+contains the quotient polynomial, one evaluation value,
+\(c\) challenged tags, one mask \(B\), and \(c\) Merkle paths of length $\log n$. Since the quotient has \(s-1\) field coefficients, the value plus quotient contributes \(s|p|\). Across \(m\) files, the proof communication is
+\(ms|p|+m(c+1)|\GG_1|+mc\log n|h|\).
 \end{itemize}
 
 \noindent\textit{2.1) Computation Complexity of Zhang et al.~\cite{ZhangTPDS23}}
 \begin{itemize}
-\item \textbf{$\Store$ Algorithm.}  For each file block, the tag \(\sigma_{i,j}=(H(F_{id}\|i\|j)\cdot g^{f_{i,j}(\alpha)})^x\) requires one exponentiation for \(g^{f_{i,j}(\alpha)}\) and one exponentiation for
-the outer secret-key power. Across \(mn\) tags this gives \(2mnE\). 
+\item \textbf{$\Store$ Algorithm.}  For each file block, the source computes \(g^{f_{i,j}(\alpha)}\) by committing the $s$ sector coefficients with \texttt{CommitG1}, and then applies the outer secret-key power. Omitting the byte hash used to derive \(H(F_{id}\|i\|j)\), this gives \((s+1)E\) per tag and \(mn(s+1)E\) in total.
 % During storage-phase tag verification, the provider recomputes \(g^{f_{i,j}(\alpha)}\) from the \(s\) sector coefficients and checks a two-pairing equation for each tag; this adds \(mnsE+2mnP\).  Thus the storage computation is \((2mn+mns)E+2mnP\).
-\item \textbf{$\ProofGen$ Algorithm.} For each file, exponentiating the \(c\) challenged tags by their audit coefficients costs \(cE\), and applying the file-folding
-coefficient \(\beta_l\) costs one more exponentiation.  Over \(m\) files this contributes \(mcE+mE\). The two polynomial-commitment proof elements \(W\) and \(W'\) are obtained from coefficient vectors of length \(s-1\), so their counted work is \((2s-2)E\). Therefore, the total cost is \((mc+m+2s-2)E\).
-\item \textbf{$\Verify$ Algorithm.} The verifier constructs the challenge term \(\zeta\) by exponentiating \(c\) hashed indices per file and then applying \(m\) file-folding powers, costing \((mc+m)E\). It also forms \(\psi=g^{-E_1}\cdot W_1^{-Z_T(z)}\) and \(u\cdot v^{-z}\), which contributes \(3E\).  The batch equation \(e(\sigma',g)e(\psi,v)=e(\zeta,v)e(W',u\cdot v^{-z})\) contains four pairings. Hence, verification costs \((mc+m+3)E+4P\).
+\item \textbf{$\ProofGen$ Algorithm.} For each file, exponentiating the \(c\) challenged tags by their audit coefficients costs \(cE\), and applying the file-folding coefficient \(\beta_l\) costs one more exponentiation. The source then computes \(W\) and \(W'\) by evaluating the relevant polynomials at \(\alpha\) in the field and performing two base exponentiations. Therefore, the total cost is \((mc+m+2)E\).
+\item \textbf{$\Verify$ Algorithm.} The verifier constructs \(\zeta\) by exponentiating each hashed index by its audit coefficient and then by the corresponding folding coefficient in the nested source loop, costing \(2mcE\) after omitting byte-hash evaluation. It also forms \(\psi=g^{-E_1}\cdot W_1^{-Z_T(z)}\) and \(u\cdot v^{-z}\), which contributes \(3E\).  The batch equation \(e(\sigma',g)e(\psi,v)=e(\zeta,v)e(W',u\cdot v^{-z})\) contains four pairings. Hence, verification costs \((2mc+3)E+4P\).
 \end{itemize}
 
 \noindent\textit{2.2) Communication Complexity of Zhang et al.~\cite{ZhangTPDS23}}
@@ -1032,13 +1044,10 @@ one match index \(\Omega_i=(H_{F_i}\cdot H_2(FID_i))^{-x}\) per file, so
 the counted work is \(mE\).  In AuthGen, the data owner creates one
 authenticator
 \(\sigma_{i,j}=(H_{F_i}\cdot H_2(FID_i)\cdot H_3(au_{i,j})\cdot
-u^{m_{i,j}})^x\) for each block.  Following the same convention as the
-scheme's algorithmic cost model, this contributes one counted group
-exponentiation per authenticator after the hash and multiplication
-terms are omitted, giving \(mnE\).  Therefore the full storage-side
-computation is \((m+mn)E\), with no pairing.  If the keyword-index module
-is stripped and only the PDP authentication core is compared, this phase
-reduces to \(mnE\).
+u^{m_{i,j}})^x\) for each block.  In the source, each block authenticator
+performs both \(u^{m_{i,j}}\) and the outer secret-key exponentiation, after
+hash-to-metadata terms are omitted. This contributes \(2mnE\). Therefore the
+full storage-side computation is \((m+2mn)E\), with no pairing.
 \item \textbf{$\ProofGen$ Algorithm.}  After locating the matched set of
 \(m\) files, the server computes
 \(T=\prod_{i\in R}\prod_{j\in Q}\sigma_{i,j}^{e_{i,j}}\), which costs
@@ -1070,13 +1079,13 @@ so the proof communication is \(|p|+2|G_1|\).
 \begin{itemize}
 \item \textbf{$\Store$ Algorithm.}  For each file and block, the data
 owner forms the block polynomial and computes the tag
-\(\sigma_{i,j}=g^{f_{m_{i,j}}(\alpha)}\).  Since polynomial evaluation
-uses field operations, tag generation contributes one group
-exponentiation for each of the \(mn\) tags.  Hashing the Merkle leaves
+\(\sigma_{i,j}=g^{f_{m_{i,j}}(\alpha)}\). In the source, this is implemented
+as an SRS commitment to the $s$ block coefficients, so tag generation costs
+\(sE\) for each of the \(mn\) tags.  Hashing the Merkle leaves
 and roots is omitted under the current computation metric.  The
 storage-side \textsf{TagVerify} cost reported by XuTIFS26 is a separate
-validation phase and is not included in this Store/Setup column.  Thus
-the normalized storage computation is \(mnE\), with no pairing.
+validation phase and is not included in this Store column.  Thus
+the normalized storage computation is \(mnsE\), with no pairing.
 \item \textbf{$\ProofGen$ Algorithm.}  For each file, the CSP linearly
 combines the \(c\) challenged block polynomials, evaluates the
 aggregate polynomial at the challenge point, and divides by \(X-r\).
@@ -1099,15 +1108,12 @@ check is not included in this normal verification cost.
 
 \noindent\textit{4.2) Communication Complexity of Xu et al.~\cite{XuTIFS26}}
 \begin{itemize}
-\item \textbf{$\Store$ Algorithm.}  The storage phase sends \(mn\)
+\item \textbf{$\Store$ Algorithm.}  The source stores \(mn\)
 encrypted blocks, each with \(s\) field sectors, and \(mn\) polynomial
 tags.  The Merkle root for each file is published as the
-verification anchor, and the algorithm also supplies authentication paths
-for stored blocks to the corresponding CSP.  Therefore the one-time
-storage communication is
-\(mns|p|+mn|G_1|+mn(\log_2 n+1)|h|+m|h|\).  If the server reconstructs and
-stores the Merkle tree locally instead of receiving all paths, the
-\(mn(\log_2 n+1)|h|\) term can be omitted.
+verification anchor.  It does not transmit a Merkle path for every stored
+block in the storage-phase interface. Therefore the one-time storage
+communication is \(mns|p|+mn|G_1|+m|h|\).
 \item \textbf{$\ProofGen$ Algorithm.}  For each file, the proof
 contains one evaluation value \(val_i\), one witness \(w_i\), the \(c\)
 challenged tags, and \(c\) Merkle authentication paths.  Across \(m\)
@@ -1124,14 +1130,14 @@ proofs, the audit-proof communication is
 \renewcommand{\arraystretch}{1.3}
 \begin{tabular}{l|c|c|c}
 \hline
-\textbf{Scheme} & \textbf{Store/Setup} & \textbf{ProofGen} & \textbf{Verify} \\
+\textbf{Scheme} & \textbf{Store} & \textbf{ProofGen} & \textbf{Verify} \\
 \hline
-Yu et al.~\cite{YuTC25} & $mnE$ & $mE$ & $m(s+c+4)E$\\
-Zhang et al.~\cite{ZhangTPDS23} & $2mnE$& $(mc+m+2s-2)E$& $(mc+m+3)E+4P$\\
-Miao et al.~\cite{MiaoSCIS2026} &  $(m+mn)E$ & $(mc+1)E$ & $(m(c+1)+2)E+2P$\\
-Xu et al.~\cite{XuTIFS26} & $mnE$ & $m(s-1)E$ & $(mc+2)E+2P$ \\
+Yu et al.~\cite{YuTC25} & $mnsE$ & $mE$ & $m(c+2s+1)E$\\
+Zhang et al.~\cite{ZhangTPDS23} & $mn(s+1)E$& $(mc+m+2)E$& $(2mc+3)E+4P$\\
+Miao et al.~\cite{MiaoSCIS2026} &  $(m+2mn)E$ & $(mc+1)E$ & $(m(c+1)+2)E+2P$\\
+Xu et al.~\cite{XuTIFS26} & $mnsE$ & $m(s-1)E$ & $(mc+2)E+2P$ \\
 \hline
-\textbf{Ours (Proposed)} & $\mathbf{mnE}$ & $(2ms+m)E$ & $(mc+6m+1)E+2P$ \\
+\textbf{Ours (Proposed)} & $\mathbf{mnsE}$ & $(2ms+m)E$ & $(mc+6m)E+2P$ \\
 \hline
 \end{tabular}
 \end{table*}
@@ -1145,20 +1151,53 @@ Xu et al.~\cite{XuTIFS26} & $mnE$ & $m(s-1)E$ & $(mc+2)E+2P$ \\
 \hline
 \textbf{Scheme} & \textbf{Store Phase} & \textbf{ProofGen Phase} \\
 \hline
-Yu et al.~\cite{YuTC25} & $mns|p| + mn|\GG_1| + m|h|$& $m\big((s+1)|p| + (c+1)|\GG_1| + c\log_2 n|h|\big)$\\
+Yu et al.~\cite{YuTC25} & $mns|p| + mn|\GG_1| + m|h|$& $m\big(s|p| + (c+1)|\GG_1| + c\log_2 n|h|\big)$\\
 Zhang et al.~\cite{ZhangTPDS23} & $mns|p| + mn|\GG_1|$& $3|\GG_1| + |p|$\\
 Miao et al.~\cite{MiaoSCIS2026} & $mn|p|+(mn+m)|\GG_1|$ & $|p|+2|\GG_1|$ \\
-Xu et al.~\cite{XuTIFS26}& $mns|p|+mn|\GG_1|+mn(\log_2 n+1)|h|+m|h|$& $m\bigl(|p|+(c+1)|\GG_1|+c\log_2 n|h|\bigr)$\\
+Xu et al.~\cite{XuTIFS26}& $mns|p|+mn|\GG_1|+m|h|$& $m\bigl(|p|+(c+1)|\GG_1|+c\log_2 n|h|\bigr)$\\
 \hline
 \textbf{Ours (Proposed)} & $mns|p| + mn|\GG_1| + m|h|$& $m(c+4)|\GG_1|+2m|p|+mc\log_2 n|h|$ \\
 \hline
 \end{tabular}
 \end{table*}
 
-
+% TODO 攻击模拟图
 
 
 \section{Evaluation}
+
+\subsection{Experimental Environment and Parameter Setting}
+
+All experiments were conducted on a local Apple M4 machine with 10 logical CPU cores and 16~GB of memory, running macOS~26.3 (Build~25D125). The host hardware reports the \texttt{arm64} architecture, while the Go toolchain used for the benchmark binary reports \texttt{darwin/amd64}. The implementation was compiled and executed with Go~1.25.4. Pairing and group operations were instantiated with the \texttt{bn256} implementation from \texttt{go-ethereum}, and each compared protocol was implemented under the same Go benchmark framework so that the measured costs reflect the formulas in Table~\ref{tab:computation} under a common software stack.
+
+\begin{table}[t]
+\centering
+\caption{Experimental Environment}
+\label{tab:environment}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{p{0.28\columnwidth}|p{0.60\columnwidth}}
+\hline
+\textbf{Item} & \textbf{Configuration} \\
+\hline
+CPU & Apple M4, 10 logical cores \\
+Memory & 16~GB \\
+Operating system & macOS~26.3 (Build~25D125) \\
+Host architecture & \texttt{arm64} \\
+Go toolchain & Go~1.25.4, \texttt{darwin/amd64} \\
+Pairing library & \url{go-ethereum/crypto/bn256/cloudflare} \\
+\hline
+\end{tabular}
+\end{table}
+
+Unless otherwise specified, the evaluation fixes the challenge size at $c=690$ and varies three workload dimensions: the batch size $m$ ranges from $1$ to $20$, the file size $B$ ranges from $1$~MB to $10$~MB, and the number of sectors per chunk $s$ ranges from $20$ to $100$. The number of chunks per file $n$ is not treated as an independent parameter. Since each sector is represented by one field element of approximately $|p|=256$ bits, one encoded chunk contains $32s$ bytes. Therefore, for a file of size $B$ bytes, we set
+\begin{equation}
+n=\max\left\{c,\left\lceil \frac{B}{32s}\right\rceil\right\}.
+\end{equation}
+The lower bound $n\geq c$ is required because the challenge set samples $c$ distinct chunks from $[n]$. When the raw size-derived value $\lceil B/(32s)\rceil$ is smaller than $c$, the encoded file representation is padded to $c$ chunks so that the sampling rule remains well-defined.
+
+The value $c=690$ is selected from the target detection probability rather than from runtime convenience. As shown below, to detect a corruption ratio at least $\rho$ with failure probability at most $\epsilon$, the verifier should choose $c \geq \ln(\epsilon)/\ln(1-\rho)$. For $\rho=1\%$ and $\epsilon=10^{-3}$, this gives $c \geq \ln(10^{-3})/\ln(0.99)\approx 687.3$; we round this to $c=690$, yielding a detection probability above $99.9\%$. Thus, $c$ is fixed by the desired audit confidence, while $m$, $B$, and $s$ are varied to evaluate scalability.
+
+We choose $s<c$ throughout the experiments. This is not merely a formatting choice: $s$ determines the degree bound of each chunk polynomial and the SRS length, whereas $c$ determines how many chunks are sampled in one audit. FoldAudit first aggregates the $c$ challenged chunks of each file into an $s$-coefficient polynomial and then computes the KZG witness over this degree-$(s-1)$ object. Keeping $s<c$ ensures that this compression is meaningful and that proof generation is governed by $O(msE)$ for the witness-related exponentiations rather than by a larger per-challenge polynomial dimension. If $s\geq c$, the algebraic batching remains syntactically valid, but the intended advantage of compressing many challenged chunks into a lower-degree per-file aggregate is weakened and the SRS, commitment, and witness costs increase without improving the detection probability, which is already controlled by $c$.
 
 \begin{lemma}[Overall Acceptance Probability Bound]
 Let $\rho \in [0,1]$ denote the fraction of corrupted or missing chunks in any audited file $F_i$, and let $d = \lfloor \rho n \rfloor$. When the Cloud Server executes $\ProofGen$ over a uniformly sampled challenge set $J \subseteq [n]$ with $|J|=c$, the probability that $\Verify$ outputs $accept$ despite the corruption is bounded by:
@@ -1183,10 +1222,118 @@ Since $E_{\text{miss}}$ and $E_{\text{forge}}$ are mutually exclusive, the total
 To achieve a target detection rate $1-\epsilon$ against corruption ratio $\rho$, the challenge size should satisfy $c \geq \frac{\ln \epsilon}{\ln(1-\rho)}$. For example, guaranteeing $99.9\%$ detection for $\rho \geq 1\%$ requires $c \approx 690$. This bound is independent of the batch size $m$ and applies uniformly across all files in the audit.
 \end{remark}
 
+\subsection{Performance Results}
+
+To evaluate the computational behavior under the above parameter setting, we first micro-benchmark the basic finite-field, group, hash-to-curve, and pairing operations of the same \texttt{bn256} backend, and then instantiate the protocol-level operation counts of each implemented scheme. This methodology avoids repeatedly materializing large encoded files while preserving the workload scale specified by $m$, $B$, $s$, $c$, and $n$. The reported audit time is the sum of \textsf{ProofGen} and \textsf{Verify}.
+
+\begin{figure*}[t]
+\centering
+\subfloat[Audit overhead under increasing batch size $m$.]{
+\includegraphics[width=0.48\textwidth]{figures/vi_evaluation/audit_vs_m.pdf}
+\label{fig:audit_vs_m}}
+\hfill
+\subfloat[Storage-generation overhead under increasing file size $B$.]{
+\includegraphics[width=0.48\textwidth]{figures/vi_evaluation/store_vs_file_size.pdf}
+\label{fig:store_vs_file_size}}
+
+\subfloat[Proof-generation overhead under increasing sector number $s$.]{
+\includegraphics[width=0.48\textwidth]{figures/vi_evaluation/proofgen_vs_s.pdf}
+\label{fig:proofgen_vs_s}}
+\hfill
+\subfloat[Verification overhead under increasing sector number $s$.]{
+\includegraphics[width=0.48\textwidth]{figures/vi_evaluation/verify_vs_s.pdf}
+\label{fig:verify_vs_s}}
+\caption{Runtime trends under the Section~VI parameter setting.}
+\label{fig:vi_runtime_trends}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\subfloat[Store, proof generation, and verification overhead at the baseline setting.]{
+\includegraphics[width=0.48\textwidth]{figures/vi_evaluation/baseline_phase_overhead.pdf}
+\label{fig:baseline_phase_overhead}}
+\hfill
+\subfloat[Average audit overhead over all varied Section~VI workloads.]{
+\includegraphics[width=0.48\textwidth]{figures/vi_evaluation/mean_audit_overhead.pdf}
+\label{fig:mean_audit_overhead}}
+\caption{Phase-level and average audit overhead comparison.}
+\label{fig:vi_aggregate_overhead}
+\end{figure*}
+
+Fig.~\ref{fig:audit_vs_m} shows that the audit overhead of all schemes increases with the batch size, because each additional file contributes challenged sectors and verification terms. FoldAudit remains close to the most efficient compared schemes across the whole range. Its average audit time over all varied workloads is $0.7710$~s, compared with $0.7653$~s for Yu et al.~\cite{YuTC25} and $0.7223$~s for Xu et al.~\cite{XuTIFS26}. The small additional cost comes from FoldAudit's folded KZG consistency terms and explicit per-file authentication material. In return, FoldAudit provides a unified multi-file audit equation with two pairings and a batch-oriented proof structure, avoiding the heavier verification behavior of Miao et al.~\cite{MiaoSCIS2026} and Zhang et al.~\cite{ZhangTPDS23}, whose average audit times are $1.5100$~s and $2.1866$~s, respectively.
+
+Fig.~\ref{fig:store_vs_file_size} reports the storage-generation cost as the file size grows from $1$~MB to $10$~MB. This phase is dominated by tag generation over all encoded chunks and therefore grows with $mn$. FoldAudit has the same asymptotic storage-generation cost $O(mnsE)$ as Yu et al.~\cite{YuTC25} and Xu et al.~\cite{XuTIFS26}, which is reflected by the nearly identical trend. Zhang et al.~\cite{ZhangTPDS23} and Miao et al.~\cite{MiaoSCIS2026} require additional group/hash-to-curve work during tag construction, so their setup cost is higher under the same backend.
+
+Fig.~\ref{fig:proofgen_vs_s} evaluates the effect of the number of sectors per chunk. Since $c$ is fixed at $690$, increasing $s$ enlarges the per-chunk polynomial representation and the field aggregation work in \textsf{ProofGen}. FoldAudit scales linearly in $s$ for witness-related group operations, matching the complexity $(2ms+m)E$ in Table~\ref{tab:computation}. It is therefore substantially below schemes whose proof generation contains terms proportional to $mc$ group operations, while remaining above schemes that only aggregate a smaller number of group elements.
+
+Fig.~\ref{fig:verify_vs_s} shows that verification is almost insensitive to $s$ for all compared schemes. This is expected because verification is governed mainly by the challenge size $c$, the batch size $m$, and a small number of pairings, rather than by the sector count of each chunk. FoldAudit preserves this desirable property: once the server has compressed the challenged sectors into folded polynomial commitments and witnesses, the verifier checks a compact folded equation with two pairings and $O(mc)$ group operations.
+
+The phase-level comparison in Fig.~\ref{fig:baseline_phase_overhead} further illustrates that \textsf{Store} is the dominant one-time cost, whereas repeated audits are governed by \textsf{ProofGen} and \textsf{Verify}. This is favorable for periodic auditing scenarios: files are stored and tagged once, but audits are executed repeatedly. As summarized in Fig.~\ref{fig:mean_audit_overhead}, FoldAudit is not the absolute minimum in raw local computation, but it stays within the same order and close numerical range as the fastest schemes while providing multi-file folded verification and explicit sampled-tag authentication. This makes the design suitable for batch audit settings where verifier-side compactness and cross-file aggregation are more important than minimizing a single isolated group-operation count.
+
 \section{Conclusion}
 
 \begin{thebibliography}{00}
 
+
+\bibitem{Ateniese2007PDP}
+G.~Ateniese, R.~Burns, R.~Curtmola, J.~Herring, L.~Kissner, Z.~Peterson, and D.~Song,
+``Provable data possession at untrusted stores,''
+in \emph{Proc. ACM CCS}, 2007, pp.~598--609.
+
+\bibitem{Juels2007POR}
+A.~Juels and B.~S.~Kaliski Jr.,
+``PORs: Proofs of retrievability for large files,''
+in \emph{Proc. ACM CCS}, 2007, pp.~584--597.
+
+\bibitem{Shacham2008POR}
+H.~Shacham and B.~Waters,
+``Compact proofs of retrievability,''
+in \emph{Proc. ASIACRYPT}, 2008, pp.~90--107.
+
+\bibitem{Erway2009DPDP}
+C.~Erway, A.~K{\"u}p{\c{c}}{\"u}, C.~Papamanthou, and R.~Tamassia,
+``Dynamic provable data possession,''
+in \emph{Proc. ACM CCS}, 2009, pp.~213--222.
+
+\bibitem{Wang2011TPDS}
+Q.~Wang, C.~Wang, J.~Li, K.~Ren, and W.~Lou,
+``Enabling public verifiability and data dynamics for storage security in cloud computing,''
+\emph{IEEE Transactions on Parallel and Distributed Systems}, vol.~22, no.~5, pp.~847--859, 2011.
+
+\bibitem{Wang2013TC}
+C.~Wang, S.~S.~M.~Chow, Q.~Wang, K.~Ren, and W.~Lou,
+``Privacy-preserving public auditing for secure cloud storage,''
+\emph{IEEE Transactions on Computers}, vol.~62, no.~2, pp.~362--375, 2013.
+
+\bibitem{Zhu2012TPDS}
+Y.~Zhu, H.~Hu, G.-J.~Ahn, and M.~Yu,
+``Cooperative provable data possession for integrity verification in multicloud storage,''
+\emph{IEEE Transactions on Parallel and Distributed Systems}, vol.~23, no.~12, pp.~2231--2244, 2012.
+
+\bibitem{Yang2013TPDS}
+K.~Yang and X.~Jia,
+``An efficient and secure dynamic auditing protocol for data storage in cloud computing,''
+\emph{IEEE Transactions on Parallel and Distributed Systems}, vol.~24, no.~9, pp.~1717--1726, 2013.
+
+\bibitem{Wang2014TCC}
+B.~Wang, B.~Li, and H.~Li,
+``Oruta: Privacy-preserving public auditing for shared data in the cloud,''
+\emph{IEEE Transactions on Cloud Computing}, vol.~2, no.~1, pp.~43--56, 2014.
+
+\bibitem{Yu2017TIFS}
+Y.~Yu, M.~H.~Au, G.~Ateniese, X.~Huang, W.~Susilo, Y.~Dai, and G.~Min,
+``Identity-based remote data integrity checking with perfect data privacy preserving for cloud storage,''
+\emph{IEEE Transactions on Information Forensics and Security}, vol.~12, no.~4, pp.~767--778, 2017.
+
+\bibitem{Catalano2013VC}
+D.~Catalano and D.~Fiore,
+``Vector commitments and their applications,''
+in \emph{Proc. PKC}, 2013, pp.~55--72.
+
+\bibitem{Boneh2019Batching}
+D.~Boneh, B.~B{\"u}nz, and B.~Fisch,
+``Batching techniques for accumulators with applications to IOPs and stateless blockchains,''
+in \emph{Proc. CRYPTO}, 2019, pp.~561--586.
 
 \bibitem{Luo2025Cauchy}Luo, Z., Jia, Y., Gracia, A.V.O. and Kate, A. Cauchyproofs: Batch-Updatable Vector Commitment with Easy Aggregation and Application to Stateless Blockchains. In \emph{S\&P}, 2025, pp. 1947-1963.
 

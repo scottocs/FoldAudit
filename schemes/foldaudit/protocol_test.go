@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"io"
 	"testing"
+
+	"foldaudit/schemes/benchcore"
 )
 
 type deterministicReader struct {
@@ -80,13 +82,13 @@ func TestTamperedProofFieldsAreRejected(t *testing.T) {
 	}
 
 	tamperedY := cloneProof(proof)
-	tamperedY.FileProofs[0].YTilde = scalarAdd(tamperedY.FileProofs[0].YTilde, scalarOne())
+	tamperedY.FileProofs[0].YTilde = benchcore.Add(tamperedY.FileProofs[0].YTilde, benchcore.One())
 	if protocol.Verify(stored, chal, tamperedY) {
 		t.Fatal("Verify accepted tampered masked evaluation")
 	}
 
 	tamperedCw := cloneProof(proof)
-	tamperedCw.FileProofs[0].Cw = g1Add(tamperedCw.FileProofs[0].Cw, g1BaseMult(scalarOne()))
+	tamperedCw.FileProofs[0].Cw = benchcore.G1Add(tamperedCw.FileProofs[0].Cw, benchcore.G1Base(benchcore.One()))
 	if protocol.Verify(stored, chal, tamperedCw) {
 		t.Fatal("Verify accepted tampered quotient commitment")
 	}
@@ -105,8 +107,8 @@ func TestTamperedChallengedDataWithOldTagsIsRejected(t *testing.T) {
 	}
 
 	chunk := chal.Indices[0]
-	stored.Files[0].Sectors[chunk][0] = scalarAdd(stored.Files[0].Sectors[chunk][0], scalarOne())
-	stored.Files[0].Polynomials[chunk] = NewPolynomial(stored.Files[0].Sectors[chunk])
+	stored.Files[0].Sectors[chunk][0] = benchcore.Add(stored.Files[0].Sectors[chunk][0], benchcore.One())
+	stored.Files[0].Polynomials[chunk] = benchcore.NewPoly(stored.Files[0].Sectors[chunk])
 
 	proof, err := protocol.ProofGen(stored, chal)
 	if err != nil {
@@ -118,7 +120,7 @@ func TestTamperedChallengedDataWithOldTagsIsRejected(t *testing.T) {
 }
 
 func TestMerkleLeafBindsFileAndPosition(t *testing.T) {
-	tag := g1BaseMult(scalarOne())
+	tag := benchcore.G1Base(benchcore.One())
 	leafA := merkleLeaf([]byte("file-a"), 0, tag)
 	leafB := merkleLeaf([]byte("file-b"), 0, tag)
 	leafC := merkleLeaf([]byte("file-a"), 1, tag)
@@ -137,12 +139,12 @@ func cloneProof(proof *AuditProof) *AuditProof {
 		for j, tagProof := range fp.Auth {
 			siblings := make([][]byte, len(tagProof.Path.Siblings))
 			for k, sibling := range tagProof.Path.Siblings {
-				siblings[k] = cloneBytes(sibling)
+				siblings[k] = benchcore.CloneBytes(sibling)
 			}
 			auth[j] = TagProof{
 				Index: tagProof.Index,
 				Tag:   cloneG1(tagProof.Tag),
-				Path: MerkleProof{
+				Path: benchcore.MerkleProof{
 					Index:    tagProof.Path.Index,
 					Siblings: siblings,
 				},
@@ -150,14 +152,14 @@ func cloneProof(proof *AuditProof) *AuditProof {
 		}
 		out.FileProofs[i] = FileProof{
 			Auth:   auth,
-			YTilde: cloneScalar(fp.YTilde),
+			YTilde: benchcore.Normalize(fp.YTilde),
 			R:      cloneG1(fp.R),
 			Cw:     cloneG1(fp.Cw),
 			B:      cloneG1(fp.B),
 		}
 	}
 	for i, pi := range proof.PiR {
-		out.PiR[i] = SchnorrProof{A: cloneG1(pi.A), Z: cloneScalar(pi.Z)}
+		out.PiR[i] = SchnorrProof{A: cloneG1(pi.A), Z: benchcore.Normalize(pi.Z)}
 	}
 	return out
 }

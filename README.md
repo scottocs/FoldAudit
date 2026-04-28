@@ -1,75 +1,100 @@
-# PDP26 Off-chain Batch PDP Verification
+# FoldAudit
 
-This repository now treats verification as an off-chain workflow with three
-parties:
+This repository contains the FoldAudit paper, protocol reproductions for the
+main related PDP schemes, and scripts for generating the experimental figures
+used in Section VI of the paper.
 
-- Data Owner: prepares files, chunks, tags, and Merkle roots.
-- Cloud Server: stores the tagged data and generates audit proofs.
-- Third-party Verifier: samples challenges and verifies proofs locally.
+## Directory Layout
 
-No blockchain transaction, contract deployment, gas estimate, or on-chain
-authentication is required for the active workflow.
+- `paper/`
+  - `FoldAudit.tex`: main LaTeX source of the paper.
+  - `FoldAudit.pdf`: compiled paper output.
+  - `figures/vi_evaluation/`: figures inserted into Section VI.
+  - `refs/`: key reference papers and notes, including `PDP_Protocols.tex`.
+- `schemes/`
+  - `foldaudit/`: Go implementation of the FoldAudit protocol core and tests.
+  - `yutc25/`, `zhangtpds23/`, `miaoscis2026/`, `xutifs26/`: reproduced protocol cores for the related schemes compared in the paper.
+  - `benchcore/`: shared benchmark and protocol utilities.
+  - `relatedbench/`: correctness tests for the reproduced related protocols.
+- `experiments/`
+  - `evaluate_vi_settings.py`: regenerates Section VI overhead data and figures from the experimental settings in `paper/FoldAudit.tex`.
+  - `out/vi_evaluation/`: generated CSV records and PDF/SVG/PNG figures.
+- `go.mod`, `go.sum`: Go module metadata.
 
-## Repository Layout
+## Requirements
 
-- [crypto/pdpbatch](crypto/pdpbatch): Go implementation of the batch PDP protocol, including BN254 (BN256) KZG commitments, Merkle authentication, proof generation, and verification.
-- [cmd/offchain-bench](cmd/offchain-bench): off-chain correctness and timing benchmark runner.
-- [crypto/kzg](crypto/kzg): real EIP-4844 KZG sample code, kept for standalone KZG experiments.
-- [legacy](legacy): archived Python prototype and its previous benchmark outputs.
-- [contracts](contracts) and [cmd/sepolia-gas](cmd/sepolia-gas): historical Sepolia/on-chain experiment code, not part of the current active path.
+- Go 1.24 or newer.
+- Python 3 with `matplotlib`, `pandas`, and `seaborn`.
+- A LaTeX distribution with `pdflatex` for compiling the paper.
 
-## Active Off-chain Path
+If the local virtual environment already exists, use `.venv/bin/python`.
+Otherwise install the Python packages in your preferred environment:
 
-The active PDP flow is:
-
-1. `BatchPDPProtocol.Store`: encode chunks, commit tags, and build Merkle roots.
-2. `BatchPDPProtocol.Challenge`: third-party verifier samples audit indices, coefficients, and evaluation points.
-3. `BatchPDPProtocol.ProofGen`: cloud server generates an audit proof.
-4. `BatchPDPProtocol.Verify`: third-party verifier checks Merkle authentication and BN254 (BN256) pairing equations locally.
-
-## Local Verification
-
-From the repository root:
-
-```powershell
-go test ./...
-go build ./...
+```bash
+python3 -m pip install matplotlib pandas seaborn
 ```
 
-## Off-chain Benchmark
+## Test the Protocol Implementations
 
-Run the default quick sweep:
+Run all Go tests from the repository root:
 
-```powershell
-go run ./cmd/offchain-bench --quick --repeats 3
+```bash
+go test ./schemes/...
 ```
 
-Run the larger sweep:
+The tests check FoldAudit correctness and the reproduced related protocol cores
+under the shared benchmark utilities.
 
-```powershell
-go run ./cmd/offchain-bench --quick=false --repeats 3
+## Regenerate Section VI Experimental Results
+
+The Section VI evaluation uses the paper settings:
+
+- challenge size `c = 690`
+- batch size `m = 1..20`
+- file size `B = 1..10 MB`
+- sectors per chunk `s = 20..100`
+- chunks per file `n = max(c, ceil(B/(32s)))`
+
+Generate fresh CSV files and figures:
+
+```bash
+.venv/bin/python experiments/evaluate_vi_settings.py
 ```
 
-Use `--timing-rounds` to control the inner averaging loop for fast local
-operations. The default is `50`, so each repeat averages 50 local proof
-generations and 50 local verifications.
+If running outside the virtual environment:
 
-Default outputs:
+```bash
+python3 experiments/evaluate_vi_settings.py
+```
 
-- [results/offchain_benchmark_summary.json](results/offchain_benchmark_summary.json)
-- [results/offchain_benchmark_results.csv](results/offchain_benchmark_results.csv)
+Generated outputs are written to:
 
-The main timing columns are:
+```text
+experiments/out/vi_evaluation/
+```
 
-- `avg_store_ms`: data-owner storage/tagging/Merkle setup time.
-- `avg_proofgen_ms`: cloud-server proof generation time.
-- `avg_verify_ms`: third-party verifier local verification time.
+Important files include:
 
-## Current Cryptographic Scope
+- `vi_overhead_all.csv`: all generated overhead records.
+- `average_overhead_summary.csv`: average audit overhead by scheme.
+- `audit_vs_m.{pdf,svg,png}`
+- `store_vs_file_size.{pdf,svg,png}`
+- `proofgen_vs_s.{pdf,svg,png}`
+- `verify_vs_s.{pdf,svg,png}`
+- `baseline_phase_overhead.{pdf,svg,png}`
+- `mean_audit_overhead.{pdf,svg,png}`
 
-The active batch PDP implementation now uses `gnark-crypto`'s BN254 (BN256)
-G1/G2 groups, scalar field arithmetic, SRS-based KZG commitments, and pairing
-checks. The benchmark remains fully off-chain.
+To refresh the figures embedded in the paper, copy the generated PDF/PNG files:
 
-The older Sepolia contract path remains in the repository for reference only
-while blockchain authentication is out of scope.
+```bash
+cp experiments/out/vi_evaluation/*.pdf experiments/out/vi_evaluation/*.png paper/figures/vi_evaluation/
+```
+
+## Notes
+
+- The experiment script estimates protocol-level overhead from reproduced
+  operation counts and locally calibrated `bn256` primitive costs. It avoids
+  repeatedly materializing large encoded files while preserving the workload
+  scale described in Section VI.
+- `paper/refs/PDP_Protocols.tex` is used as the implementation reference for
+  the related protocols in `schemes/`.

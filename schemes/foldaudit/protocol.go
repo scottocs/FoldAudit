@@ -9,6 +9,8 @@ import (
 	"sort"
 
 	bn256 "github.com/ethereum/go-ethereum/crypto/bn256/cloudflare"
+
+	"foldaudit/schemes/benchcore"
 )
 
 type Config struct {
@@ -71,20 +73,20 @@ func Setup(config Config, reader io.Reader) (*Protocol, error) {
 	}
 
 	srs := make([]*bn256.G1, config.SectorsPerChunk)
-	power := scalarOne()
+	power := benchcore.One()
 	for i := range srs {
-		srs[i] = g1BaseMult(power)
-		power = scalarMul(power, tau)
+		srs[i] = benchcore.G1Base(power)
+		power = benchcore.Mul(power, tau)
 	}
 
 	return &Protocol{
 		Config: config,
 		PP: PublicParams{
 			SRSG1: srs,
-			G2:    g2BaseMult(scalarOne()),
-			TauG2: g2BaseMult(tau),
+			G2:    benchcore.G2Base(benchcore.One()),
+			TauG2: benchcore.G2Base(tau),
 		},
-		tau:  cloneScalar(tau),
+		tau:  benchcore.Normalize(tau),
 		rand: reader,
 	}, nil
 }
@@ -96,9 +98,9 @@ func NewProtocol(config Config, reader io.Reader) (*Protocol, error) {
 type StoredFile struct {
 	FileID      []byte
 	Sectors     [][]*big.Int
-	Polynomials []Polynomial
+	Polynomials []benchcore.Poly
 	Tags        []*bn256.G1
-	Tree        *MerkleTree
+	Tree        *benchcore.MerkleTree
 	Root        []byte
 }
 
@@ -117,7 +119,7 @@ type Challenge struct {
 type TagProof struct {
 	Index int
 	Tag   *bn256.G1
-	Path  MerkleProof
+	Path  benchcore.MerkleProof
 }
 
 type SchnorrProof struct {
@@ -170,7 +172,7 @@ func (p *Protocol) Store(dataset [][][]*big.Int) (*StoredBatch, error) {
 
 		fileID := []byte(fmt.Sprintf("file-%d", i))
 		sectors := make([][]*big.Int, len(chunks))
-		polys := make([]Polynomial, len(chunks))
+		polys := make([]benchcore.Poly, len(chunks))
 		tags := make([]*bn256.G1, len(chunks))
 		leaves := make([][]byte, len(chunks))
 		for j, chunk := range chunks {
@@ -178,24 +180,24 @@ func (p *Protocol) Store(dataset [][][]*big.Int) (*StoredBatch, error) {
 				return nil, fmt.Errorf("file %d chunk %d: expected %d sectors, got %d", i, j, p.Config.SectorsPerChunk, len(chunk))
 			}
 			sectors[j] = cloneScalars(chunk)
-			polys[j] = NewPolynomial(sectors[j])
+			polys[j] = benchcore.NewPoly(sectors[j])
 			tags[j] = p.CommitPolynomial(polys[j])
 			leaves[j] = merkleLeaf(fileID, j, tags[j])
 		}
 
-		tree, err := NewMerkleTree(leaves)
+		tree, err := benchcore.NewMerkleTree(leaves)
 		if err != nil {
 			return nil, err
 		}
 		files[i] = StoredFile{
-			FileID:      cloneBytes(fileID),
+			FileID:      benchcore.CloneBytes(fileID),
 			Sectors:     sectors,
 			Polynomials: polys,
 			Tags:        tags,
 			Tree:        tree,
-			Root:        cloneBytes(tree.Root),
+			Root:        benchcore.CloneBytes(tree.Root),
 		}
-		roots[i] = cloneBytes(tree.Root)
+		roots[i] = benchcore.CloneBytes(tree.Root)
 	}
 
 	return &StoredBatch{Files: files, Roots: roots}, nil
@@ -254,17 +256,17 @@ func (p *Protocol) ProofGen(stored *StoredBatch, chal *Challenge) (*AuditProof, 
 			return nil, err
 		}
 		bi := p.CommitPolynomial(fi)
-		yi := fi.Evaluate(chal.EvaluationPoints[i])
+		yi := fi.Eval(chal.EvaluationPoints[i])
 
 		mu, err := randomScalar(p.rand, false)
 		if err != nil {
 			return nil, err
 		}
 		masks[i] = mu
-		yTilde := scalarAdd(yi, mu)
-		Ri := g1BaseMult(mu)
+		yTilde := benchcore.Add(yi, mu)
+		Ri := benchcore.G1Base(mu)
 
-		wi, remainder := fi.SubtractConstant(yi).DivideByLinear(chal.EvaluationPoints[i])
+		wi, remainder := fi.SubConstant(yi).DivLinear(chal.EvaluationPoints[i])
 		if remainder.Sign() != 0 {
 			return nil, fmt.Errorf("file %d quotient has nonzero remainder", i)
 		}
@@ -303,7 +305,7 @@ func (p *Protocol) Verify(stored *StoredBatch, chal *Challenge, proof *AuditProo
 			return false
 		}
 		bHat, ok := p.aggregateProofTag(fp, chal, i)
-		if !ok || !g1Equal(bHat, fp.B) {
+		if !ok || !benchcore.G1Eq(bHat, fp.B) {
 			return false
 		}
 	}
@@ -313,30 +315,22 @@ func (p *Protocol) Verify(stored *StoredBatch, chal *Challenge, proof *AuditProo
 	}
 
 	rho := p.fiatShamirRho(stored.Roots, chal, proof)
-	left := g1Identity()
-	right := g1Identity()
-	rhoPower := scalarOne()
+	left := benchcore.G1Zero()
+	right := benchcore.G1Zero()
+	rhoPower := benchcore.One()
 	for i, fp := range proof.FileProofs {
-		term := g1Add(fp.B, fp.R)
-		term = g1Add(term, g1BaseMult(scalarNeg(fp.YTilde)))
-		term = g1Add(term, g1ScalarMult(fp.Cw, chal.EvaluationPoints[i]))
-		left = g1Add(left, g1ScalarMult(term, rhoPower))
-		right = g1Add(right, g1ScalarMult(fp.Cw, rhoPower))
-		rhoPower = scalarMul(rhoPower, rho)
+		term := benchcore.G1Add(fp.B, fp.R)
+		term = benchcore.G1Add(term, benchcore.G1Base(benchcore.Neg(fp.YTilde)))
+		term = benchcore.G1Add(term, benchcore.G1Mul(fp.Cw, chal.EvaluationPoints[i]))
+		left = benchcore.G1Add(left, benchcore.G1Mul(term, rhoPower))
+		right = benchcore.G1Add(right, benchcore.G1Mul(fp.Cw, rhoPower))
+		rhoPower = benchcore.Mul(rhoPower, rho)
 	}
-	return pairingEqual(left, p.PP.G2, right, p.PP.TauG2)
+	return benchcore.PairingEqual(left, p.PP.G2, right, p.PP.TauG2)
 }
 
-func (p *Protocol) CommitPolynomial(poly Polynomial) *bn256.G1 {
-	result := g1Identity()
-	coeffs := poly.Coefficients()
-	for i, coeff := range coeffs {
-		if i >= len(p.PP.SRSG1) {
-			panic("polynomial degree exceeds SRS")
-		}
-		result = g1Add(result, g1ScalarMult(p.PP.SRSG1[i], coeff))
-	}
-	return result
+func (p *Protocol) CommitPolynomial(poly benchcore.Poly) *bn256.G1 {
+	return benchcore.CommitG1(p.PP.SRSG1, poly)
 }
 
 func (p *Protocol) sampleIndices() ([]int, error) {
@@ -356,11 +350,11 @@ func (p *Protocol) sampleIndices() ([]int, error) {
 	return indices, nil
 }
 
-func (p *Protocol) aggregatePolynomial(file StoredFile, chal *Challenge, fileIndex int) (Polynomial, error) {
-	out := NewPolynomial([]*big.Int{scalarZero()})
+func (p *Protocol) aggregatePolynomial(file StoredFile, chal *Challenge, fileIndex int) (benchcore.Poly, error) {
+	out := benchcore.NewPoly([]*big.Int{benchcore.Zero()})
 	for pos, chunkIndex := range chal.Indices {
 		if chunkIndex < 0 || chunkIndex >= len(file.Polynomials) {
-			return Polynomial{}, fmt.Errorf("challenge index %d out of range", chunkIndex)
+			return benchcore.Poly{}, fmt.Errorf("challenge index %d out of range", chunkIndex)
 		}
 		out = out.Add(file.Polynomials[chunkIndex].Scale(chal.Coefficients[fileIndex][pos]))
 	}
@@ -393,7 +387,7 @@ func (p *Protocol) verifyAuth(file StoredFile, root []byte, fp FileProof, chal *
 			return false
 		}
 		leaf := merkleLeaf(file.FileID, chunkIndex, auth.Tag)
-		if !VerifyMerkleProof(leaf, root, auth.Path) {
+		if !benchcore.VerifyMerkle(leaf, root, auth.Path) {
 			return false
 		}
 	}
@@ -404,12 +398,12 @@ func (p *Protocol) aggregateProofTag(fp FileProof, chal *Challenge, fileIndex in
 	if len(fp.Auth) != len(chal.Indices) {
 		return nil, false
 	}
-	out := g1Identity()
+	out := benchcore.G1Zero()
 	for pos, auth := range fp.Auth {
 		if auth.Index != chal.Indices[pos] || auth.Tag == nil {
 			return nil, false
 		}
-		out = g1Add(out, g1ScalarMult(auth.Tag, chal.Coefficients[fileIndex][pos]))
+		out = benchcore.G1Add(out, benchcore.G1Mul(auth.Tag, chal.Coefficients[fileIndex][pos]))
 	}
 	return out, true
 }
@@ -422,9 +416,9 @@ func (p *Protocol) schnorrMaskProofs(roots [][]byte, chal *Challenge, fps []File
 		if err != nil {
 			return nil, err
 		}
-		A := g1BaseMult(a)
-		c := hashToScalar("foldaudit:mask-pok", stmt, intBytes(i), g1Bytes(A))
-		z := scalarAdd(a, scalarMul(c, masks[i]))
+		A := benchcore.G1Base(a)
+		c := benchcore.ScalarFromBytes("foldaudit:mask-pok", stmt, benchcore.IntBytes(i), g1Bytes(A))
+		z := benchcore.Add(a, benchcore.Mul(c, masks[i]))
 		proofs[i] = SchnorrProof{A: A, Z: z}
 	}
 	return proofs, nil
@@ -436,10 +430,10 @@ func (p *Protocol) verifySchnorrMaskProofs(roots [][]byte, chal *Challenge, proo
 		if pi.A == nil || pi.Z == nil {
 			return false
 		}
-		c := hashToScalar("foldaudit:mask-pok", stmt, intBytes(i), g1Bytes(pi.A))
-		left := g1BaseMult(pi.Z)
-		right := g1Add(pi.A, g1ScalarMult(proof.FileProofs[i].R, c))
-		if !g1Equal(left, right) {
+		c := benchcore.ScalarFromBytes("foldaudit:mask-pok", stmt, benchcore.IntBytes(i), g1Bytes(pi.A))
+		left := benchcore.G1Base(pi.Z)
+		right := benchcore.G1Add(pi.A, benchcore.G1Mul(proof.FileProofs[i].R, c))
+		if !benchcore.G1Eq(left, right) {
 			return false
 		}
 	}
@@ -448,7 +442,7 @@ func (p *Protocol) verifySchnorrMaskProofs(roots [][]byte, chal *Challenge, proo
 
 func (p *Protocol) fiatShamirRho(roots [][]byte, chal *Challenge, proof *AuditProof) *big.Int {
 	parts := [][]byte{challengeBytes(chal), rootsBytes(roots), fileProofStatementBytes(proof.FileProofs), schnorrProofBytes(proof.PiR)}
-	return hashToScalar("foldaudit:fold", parts...)
+	return benchcore.ScalarFromBytes("foldaudit:fold", parts...)
 }
 
 func (p *Protocol) validateStoredBatch(stored *StoredBatch) error {
@@ -495,13 +489,40 @@ func (p *Protocol) validateChallenge(chal *Challenge) error {
 }
 
 func merkleLeaf(fileID []byte, index int, tag *bn256.G1) []byte {
-	return hashBytes("foldaudit:merkle:leaf", fileID, intBytes(index), g1Bytes(tag))
+	return benchcore.HashBytes("foldaudit:merkle:leaf", fileID, benchcore.IntBytes(index), g1Bytes(tag))
+}
+
+func randomScalar(reader io.Reader, nonZero bool) (*big.Int, error) {
+	for {
+		x, err := rand.Int(reader, benchcore.Order)
+		if err != nil {
+			return nil, err
+		}
+		x = benchcore.Normalize(x)
+		if !nonZero || x.Sign() != 0 {
+			return x, nil
+		}
+	}
 }
 
 func cloneScalars(values []*big.Int) []*big.Int {
 	out := make([]*big.Int, len(values))
 	for i, value := range values {
-		out[i] = cloneScalar(value)
+		out[i] = benchcore.Normalize(value)
 	}
 	return out
+}
+
+func cloneG1(point *bn256.G1) *bn256.G1 {
+	if point == nil {
+		return nil
+	}
+	return new(bn256.G1).Set(point)
+}
+
+func g1Bytes(point *bn256.G1) []byte {
+	if point == nil {
+		return nil
+	}
+	return point.Marshal()
 }
