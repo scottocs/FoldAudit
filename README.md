@@ -50,9 +50,9 @@ under the shared benchmark utilities.
 The Section VI evaluation uses the paper settings:
 
 - challenge size `c = 690`
-- batch size `m = 1..20`
-- file size `B = 1..100 MB`
-- sectors per chunk `s = 20..100`
+- batch size `m = 1..5`
+- file size `B in {1, 2, 5, 10} MB`
+- sectors per chunk `s in {20, 40, 60, 80, 100}`
 - chunks per file `n = max(c, ceil(B/(32s)))`
 
 Generate fresh CSV files by executing the reproduced protocols on simulated
@@ -63,8 +63,9 @@ go run ./experiments/protocolbench -profile paper -out experiments/out/vi_evalua
 .venv/bin/python experiments/evaluate_vi_settings.py
 ```
 
-The `paper` profile executes the full Section VI workload and can take a long
-time because storage generation really computes tags for the simulated files.
+The `paper` profile strictly executes the reproduced protocol source. Dense
+large-file sweeps such as every size from 1 MB to 100 MB can take hours because
+storage generation really computes tags for the simulated files.
 
 For a fast sanity check of the protocol-execution pipeline, use the small quick
 profile instead of the full paper workload:

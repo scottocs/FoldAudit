@@ -864,13 +864,13 @@ For values outside the verifier's tested candidate set, recovering $\mu_i$ from 
 
 \subsection{Complexity Analysis}
 \label{sec:complexity_analysis}
-We measure computational overhead in terms of group exponentiations ($E$) and bilinear pairings ($P$). Field arithmetic, byte-hash evaluations, Fiat--Shamir transcript hashing, group multiplications, and Merkle-path hashing are omitted from the group-operation count. Hash-to-group calls in the source are implemented as base scalar multiplications and are counted as one $E$ each. When the source code computes a KZG-style commitment with an SRS, we count the scalar multiplication for each committed coefficient. Communication overhead is measured in bits using $|p|$, $|\GG_1|$, and $|h|$ for a field element, a $\GG_1$ element, and a hash digest, respectively.
+We measure computational overhead in terms of group exponentiations ($E$) and bilinear pairings ($P$). Field arithmetic, byte-hash evaluations, Fiat--Shamir transcript hashing, group multiplications, and Merkle-path hashing are omitted from the group-operation count. Hash-to-group calls in the source are implemented as base scalar multiplications and are counted as one $E$ each. In the \textsf{Store} phase, the DO knows the SRS trapdoor and computes each KZG tag as a direct base exponentiation \(g^{f(\tau)}\), costing one \(E\). When the CS or verifier computes a KZG-style commitment from the public SRS, we count the scalar multiplication for each committed coefficient. Communication overhead is measured in bits using $|p|$, $|\GG_1|$, and $|h|$ for a field element, a $\GG_1$ element, and a hash digest, respectively.
 
 \paragraph{Computation Complexity.} 
 \begin{itemize}
-    \item $\Store$ Algorithm. In the implementation, each tag $\sigma_{i,j}=g^{f_{i,j}(\tau)}$ is computed by committing the $s$ coefficients of $f_{i,j}(X)$ against the SRS, i.e., by calling \texttt{CommitPolynomial}. Thus each tag costs $sE$. Across $m$ files and $n$ chunks, the storage-side group cost is
+    \item $\Store$ Algorithm. In the implementation, the DO knows \(\tau\) during storage and computes each tag directly as \(\sigma_{i,j}=g^{f_{i,j}(\tau)}\). Field evaluation of \(f_{i,j}(\tau)\) is omitted under the metric, and the group work is one base exponentiation per tag. Across $m$ files and $n$ chunks, the storage-side group cost is
     \[
-        mnsE .
+        mnE .
     \]
     \item $\ProofGen$ Algorithm. For each file, after forming the aggregated polynomial $f_i(X)=\sum_{k=0}^{s-1}a_{i,k}X^k$ in the field, the CS computes the aggregate commitment as $b_i=g^{f_i(\tau)}=\prod_{k=0}^{s-1}(g^{\tau^k})^{a_{i,k}}$ using the SRS. This costs $sE$, rather than $cE$, and is equivalent to $\prod_{j\in J}\sigma_{i,j}^{v_{i,j}}$ by the homomorphism of KZG commitments. The CS also computes the mask commitment $R_i=g^{\mu_i}$ using $E$, the quotient commitment $C_{w_i}=g^{w_i(\tau)}$ using $(s-1)E$, and the Schnorr commitment $A_i=g^{a_i}$ using $E$. Thus proof generation costs
     \[
@@ -929,7 +929,7 @@ When the DO uploads a new file $F_{m+1}$, it encodes each chunk into $f_{m+1,j}(
 
 To remove $F_{i_{\text{del}}}$ from subsequent audits, the DO and V revoke $\Gamma_{i_{\text{del}}}$ from the active metadata set and exclude the corresponding file identifier from future challenges. The CS may reclaim the associated data, tags, and Merkle nodes according to the storage policy, but this protocol action is only an audit-set update and does not prove physical erasure. Surviving files simply skip the removed identifier in subsequent audit loops, incurring zero recomputation of tags or Merkle roots. The active batch size decreases by one, and future $\ProofGen$ executions simply iterate over the reduced active set.
 
-\textit{Complexity of Dynamic Operations.} Adding a single file requires $\mathcal{O}(nsE)$ time for tag generation, as implied by the \textsf{Store} algorithm. Removing a file from the active audit set only updates the metadata registry and requires no tag generation, Merkle reconstruction for surviving files, SRS regeneration, trapdoor rotation, or global commitment recomputation. Since proof generation is challenge-driven and stateless, dynamic updates incur overhead strictly at the storage and metadata layers. Consequently, the \textsf{ProofGen} and \textsf{Verify} algorithms retain the same complexity as analyzed in Section~\ref{sec:complexity_analysis}.
+\textit{Complexity of Dynamic Operations.} Adding a single file requires $\mathcal{O}(nE)$ time for tag generation, as implied by the \textsf{Store} algorithm under the DO-known trapdoor computation. Removing a file from the active audit set only updates the metadata registry and requires no tag generation, Merkle reconstruction for surviving files, SRS regeneration, trapdoor rotation, or global commitment recomputation. Since proof generation is challenge-driven and stateless, dynamic updates incur overhead strictly at the storage and metadata layers. Consequently, the \textsf{ProofGen} and \textsf{Verify} algorithms retain the same complexity as analyzed in Section~\ref{sec:complexity_analysis}.
 
 \section{Related Works}
 \label{sec:related_works}
@@ -998,12 +998,12 @@ Despite these advances, existing schemes leave at least one of the following gap
 \end{table*}
 
 
-To facilitate a direct comparison, we adopt the unified notation throughout this section: $m$ files in a single audit batch, each comprising $n$ chunks, where each chunk is algebraically encoded as a polynomial of degree $s-1$ (i.e., $s$ sectors per chunk). Let $c$ denote the number of challenged chunks per file. We count only expensive group exponentiations and pairings; field operations, group additions, PRF calls, byte hashes, Merkle-path hashing, and searchable-index row decryption are omitted from Table~\ref{tab:computation}. Hash-to-group calls in the source, such as \texttt{HashToG1Bytes}, are counted as one exponentiation because they are implemented as \texttt{G1Base(ScalarFromBytes(...))}. The counts below follow the system-level source reproductions under \texttt{schemes/}: YuTC25 is executed as independent multi-file audits because it has no native cross-file batch equation; XuTIFS26 exposes a separate storage tag-verification routine, but the Store column counts only the outsourcing and tag-generation path used by \texttt{Store}; ZhangTPDS23 uses independent per-file challenge sets in its PCS-MPAP batch proof; and MiaoSCIS2026 includes trapdoor-driven encrypted index rows for keyword matching. SRS-based commitment routines count one scalar multiplication per committed coefficient. For MiaoSCIS2026, let $\ell$ denote the average number of keywords attached to each stored file; auxiliary searchable-index row encryption metadata not represented by $(m,n,s,c,\ell)$ is omitted. For FoldAudit, the table reports the additive-mask version with Schnorr mask PoK in Algorithms~\ref{alg:proofgen} and~\ref{alg:verify}. For ZhangTPDS23 and XuTIFS26, which are originally parameterized by the number of replicas/providers, the table reports the normalized single-replica case $N=1$ so that the comparison focuses on multi-file integrity rather than replication redundancy. For MiaoSCIS2026, $m$ denotes the number of keyword-matched files participating in the audit.
+To facilitate a direct comparison, we adopt the unified notation throughout this section: $m$ files in a single audit batch, each comprising $n$ chunks, where each chunk is algebraically encoded as a polynomial of degree $s-1$ (i.e., $s$ sectors per chunk). Let $c$ denote the number of challenged chunks per file. We count only expensive group exponentiations and pairings; field operations, group additions, PRF calls, byte hashes, Merkle-path hashing, and searchable-index row decryption are omitted from Table~\ref{tab:computation}. Hash-to-group calls in the source, such as \texttt{HashToG1Bytes}, are counted as one exponentiation because they are implemented as \texttt{G1Base(ScalarFromBytes(...))}. The counts below follow the system-level source reproductions under \texttt{schemes/}: YuTC25 is executed as independent multi-file audits because it has no native cross-file batch equation; XuTIFS26 exposes a separate storage tag-verification routine, but the Store column counts only the outsourcing and tag-generation path used by \texttt{Store}; ZhangTPDS23 uses independent per-file challenge sets in its PCS-MPAP batch proof; and MiaoSCIS2026 includes trapdoor-driven encrypted index rows for keyword matching. Store-phase KZG tags are counted from the DO side, where the trapdoor is known and each tag costs one base exponentiation. Public-SRS commitment routines used by the CS or verifier count one scalar multiplication per committed coefficient. For MiaoSCIS2026, let $\ell$ denote the average number of keywords attached to each stored file; auxiliary searchable-index row encryption metadata not represented by $(m,n,s,c,\ell)$ is omitted. For FoldAudit, the table reports the additive-mask version with Schnorr mask PoK in Algorithms~\ref{alg:proofgen} and~\ref{alg:verify}. For ZhangTPDS23 and XuTIFS26, which are originally parameterized by the number of replicas/providers, the table reports the normalized single-replica case $N=1$ so that the comparison focuses on multi-file integrity rather than replication redundancy. For MiaoSCIS2026, $m$ denotes the number of keyword-matched files participating in the audit.
 
 % \paragraph{}
 \noindent\textit{1.1) Computation Complexity of Yu et al.~\cite{YuTC25}}
 \begin{itemize}
-\item \textbf{$\Store$ Algorithm.}  In the source, each chunk tag is computed by committing the $s$ coefficients of the chunk polynomial against the SRS. Therefore, each tag costs $sE$, and the storage computation for $m$ independent files is \(mnsE\).
+\item \textbf{$\Store$ Algorithm.}  In the source, the DO knows the setup trapdoor \(\psi\) and computes each chunk tag directly as \(g^{f(\psi)}\). Therefore, each tag costs \(E\), and the storage computation for $m$ independent files is \(mnE\).
 \item \textbf{$\ProofGen$ Algorithm.} The only counted group exponentiation is the privacy mask \(B=g^\beta\). Therefore, over \(m\) independent files, the computation is \(mE\).
 \item \textbf{$\Verify$ Algorithm.}  For each file, the verifier aggregates the \(c\) challenged tags, computes \(B^\eta\), commits the quotient polynomial through \texttt{CommitG1}, computes the shifted quotient commitment loop in the source, and forms the terms \(H_Z^{-z}\) and \(g^{P_{\mathrm{prf}}(z)}\). Since the quotient has at most \(s-1\) coefficients, this costs \((c+2s+1)E\) per independent audit. Thus, auditing \(m\) files independently costs \(m(c+2s+1)E\).
 \end{itemize}
@@ -1020,9 +1020,8 @@ contains the quotient polynomial, one evaluation value,
 
 \noindent\textit{2.1) Computation Complexity of Zhang et al.~\cite{ZhangTPDS23}}
 \begin{itemize}
-\item \textbf{$\Store$ Algorithm.}  For each file block, the source derives \(H(F_{id}\|i\|j)\) through \texttt{HashToG1Bytes}, computes \(g^{f_{i,j}(\alpha)}\) by committing the $s$ sector coefficients with \texttt{CommitG1}, and then applies the outer secret-key power. Counting the hash-to-group derivation as one exponentiation, this gives \((s+2)E\) per tag and \(mn(s+2)E\) in total.
-% During storage-phase tag verification, the provider recomputes \(g^{f_{i,j}(\alpha)}\) from the \(s\) sector coefficients and checks a two-pairing equation for each tag; this adds \(mnsE+2mnP\).  Thus the storage computation is \((2mn+mns)E+2mnP\).
-\item \textbf{$\ProofGen$ Algorithm.} For each file, exponentiating the \(c\) challenged tags by their audit coefficients costs \(cE\), and applying the file-folding coefficient \(\beta_l\) costs one more exponentiation. The source then computes \(W\) and \(W'\) by evaluating the relevant polynomials at \(\alpha\) in the field and performing two base exponentiations. Therefore, the total cost is \((mc+m+2)E\).
+\item \textbf{$\Store$ Algorithm.}  For each file block, the source derives \(H(F_{id}\|i\|j)\) through \texttt{HashToG1Bytes}, computes \(g^{f_{i,j}(\alpha)}\) directly using the DO-known trapdoor \(\alpha\), and then applies the outer secret-key power. Counting the hash-to-group derivation as one exponentiation, this gives \(3E\) per tag and \(3mnE\) in total.
+\item \textbf{$\ProofGen$ Algorithm.} For each file, exponentiating the \(c\) challenged tags by their audit coefficients costs \(cE\), and applying the file-folding coefficient \(\beta_l\) costs one more exponentiation. Since the storage server does not know the SRS trapdoor \(\alpha\), the source computes \(W\) and \(W'\) as KZG commitments over the public SRS: \(W=\mathsf{Commit}(H_b)\) and \(W'=\mathsf{Commit}(L(X)/(X-z))\). Both committed polynomials have at most \(s-1\) coefficients, contributing \(2(s-1)E\). Therefore, the total cost is \((mc+m+2s-2)E\).
 \item \textbf{$\Verify$ Algorithm.} The verifier constructs \(\zeta\) by deriving each hashed index through \texttt{HashToG1Bytes}, exponentiating it by its audit coefficient, and then exponentiating the intermediate term by the corresponding folding coefficient in the nested source loop. This costs \(3mcE\). It also forms \(\psi=g^{-E_1}\cdot W_1^{-Z_T(z)}\) and \(u\cdot v^{-z}\), which contributes \(3E\).  The batch equation \(e(\sigma',g)e(\psi,v)=e(\zeta,v)e(W',u\cdot v^{-z})\) contains four pairings. Hence, verification costs \((3mc+3)E+4P\).
 \end{itemize}
 
@@ -1079,13 +1078,12 @@ so the proof communication is \(|p|+2|G_1|\).
 \begin{itemize}
 \item \textbf{$\Store$ Algorithm.}  For each file and block, the data
 owner forms the block polynomial and computes the tag
-\(\sigma_{i,j}=g^{f_{m_{i,j}}(\alpha)}\). In the source, this is implemented
-as an SRS commitment to the $s$ block coefficients, so tag generation costs
-\(sE\) for each of the \(mn\) tags.  Hashing the Merkle leaves
+\(\sigma_{i,j}=g^{f_{m_{i,j}}(\alpha)}\). Since the DO knows \(\alpha\), tag
+generation costs one base exponentiation for each of the \(mn\) tags.  Hashing the Merkle leaves
 and roots is omitted under the current computation metric.  The
 storage-side \textsf{TagVerify} cost reported by XuTIFS26 is a separate
 validation phase and is not included in this Store column.  Thus
-the normalized storage computation is \(mnsE\), with no pairing.
+the normalized storage computation is \(mnE\), with no pairing.
 \item \textbf{$\ProofGen$ Algorithm.}  For each file, the CSP linearly
 combines the \(c\) challenged block polynomials, evaluates the
 aggregate polynomial at the challenge point, and divides by \(X-r\).
@@ -1132,12 +1130,12 @@ proofs, the audit-proof communication is
 \hline
 \textbf{Scheme} & \textbf{Store} & \textbf{ProofGen} & \textbf{Verify} \\
 \hline
-Yu et al.~\cite{YuTC25} & $mnsE$ & $mE$ & $m(c+2s+1)E$\\
-Zhang et al.~\cite{ZhangTPDS23} & $mn(s+2)E$& $(mc+m+2)E$& $(3mc+3)E+4P$\\
+Yu et al.~\cite{YuTC25} & $mnE$ & $mE$ & $m(c+2s+1)E$\\
+Zhang et al.~\cite{ZhangTPDS23} & $3mnE$& $(mc+m+2s-2)E$& $(3mc+3)E+4P$\\
 Miao et al.~\cite{MiaoSCIS2026} &  $(m\ell+2m+3mn)E$ & $(mc+1)E$ & $(2mc+m+2)E+2P$\\
-Xu et al.~\cite{XuTIFS26} & $mnsE$ & $m(s-1)E$ & $(mc+2)E+2P$ \\
+Xu et al.~\cite{XuTIFS26} & $mnE$ & $m(s-1)E$ & $(mc+2)E+2P$ \\
 \hline
-\textbf{Ours (Proposed)} & $\mathbf{mnsE}$ & $(2ms+m)E$ & $(mc+6m)E+2P$ \\
+\textbf{Ours (Proposed)} & $\mathbf{mnE}$ & $(2ms+m)E$ & $(mc+6m)E+2P$ \\
 \hline
 \end{tabular}
 \end{table*}
@@ -1168,7 +1166,7 @@ Xu et al.~\cite{XuTIFS26}& $mns|p|+mn|\GG_1|+m|h|$& $m\bigl(|p|+(c+1)|\GG_1|+c\l
 
 \subsection{Experimental Environment and Parameter Setting}
 
-All experiments were conducted on a local Apple M4 machine with 10 logical CPU cores and 16~GB of memory, running macOS~26.3 (Build~25D125). The host hardware reports the \texttt{arm64} architecture, while the Go toolchain used for the benchmark binary reports \texttt{darwin/amd64}. The implementation was compiled and executed with Go~1.25.4. Pairing and group operations were instantiated with the \texttt{bn256} implementation from \texttt{go-ethereum}. Each compared protocol was reproduced under the same Go framework with its system-level audit path: storage/tag generation, challenge derivation, proof generation, and verification are implemented for multi-file audit tests. The plotted costs are then derived from the expensive algebraic operations exercised by these implementations so that all schemes are evaluated under a common software stack and the formulas in Table~\ref{tab:computation}.
+All experiments were conducted on a local Apple M4 machine with 10 logical CPU cores and 16~GB of memory, running macOS~26.3 (Build~25D125). The host hardware reports the \texttt{arm64} architecture, while the Go toolchain used for the benchmark binary reports \texttt{darwin/amd64}. The implementation was compiled and executed with Go~1.25.4. Pairing and group operations were instantiated with the \texttt{bn256} implementation from \texttt{go-ethereum}. Each compared protocol was reproduced under the same Go framework with its system-level audit path: storage/tag generation, challenge derivation, proof generation, and verification are implemented for multi-file audit tests. The plotted costs are measured by executing these protocol routines directly on deterministically generated file contents, rather than by multiplying abstract operation counts by single-operation latencies.
 
 \begin{table}[t]
 \centering
@@ -1189,20 +1187,23 @@ Pairing library & \url{go-ethereum/crypto/bn256/cloudflare} \\
 \end{tabular}
 \end{table}
 
-The calibrated single-operation latencies used to convert operation counts into
-runtime estimates are listed in Table~\ref{tab:primitive_latency}. The
-\textsf{HashToG1} entry corresponds to the implementation used in the source
-code, namely hashing the transcript to a scalar and performing one
-\(\GG_1\) base scalar multiplication.
+For cross-checking only, Table~\ref{tab:primitive_latency} reports the
+single-operation latencies measured on the same backend. These values help
+interpret why pairing-heavy or scalar-multiplication-heavy schemes behave
+differently, but they are not used to generate the experimental curves in
+Section~VI; all plotted data are obtained by executing the protocol source code.
+The \textsf{HashToG1} entry corresponds to the local implementation that hashes
+the transcript to a scalar and then performs one \(\GG_1\) base scalar
+multiplication.
 
 \begin{table}[t]
 \centering
-\caption{Calibrated Single-Operation Latency on the Evaluation Backend}
+\caption{Single-Operation Latency for Cross-Checking Only}
 \label{tab:primitive_latency}
 \renewcommand{\arraystretch}{1.18}
 \begin{tabular}{l|c|c}
 \hline
-\textbf{Operation} & \textbf{Script Counter} & \textbf{Latency ($\mu$s/op)} \\
+\textbf{Operation} & \textbf{Counter} & \textbf{Latency ($\mu$s/op)} \\
 \hline
 Finite-field operation & \texttt{field} & 0.410 \\
 \(\GG_1\) addition & \texttt{g1\_add} & 0.415 \\
@@ -1214,7 +1215,7 @@ Pairing check term & \texttt{pair} & 1153.475 \\
 \end{tabular}
 \end{table}
 
-Unless otherwise specified, the evaluation fixes the challenge size at $c=690$ and varies three workload dimensions: the batch size $m$ ranges from $1$ to $20$, the file size $B$ ranges from $1$~MB to $100$~MB, and the number of sectors per chunk $s$ ranges from $20$ to $100$. The number of chunks per file $n$ is not treated as an independent parameter. Since each sector is represented by one field element of approximately $|p|=256$ bits, one encoded chunk contains $32s$ bytes. Therefore, for a file of size $B$ bytes, we set
+Unless otherwise specified, the evaluation fixes the challenge size at $c=690$ and varies three workload dimensions using a source-execution profile that does not replace protocol execution by operation-count extrapolation. The batch size $m$ ranges from $1$ to $5$, the file size $B$ is sampled at $\{1,2,5,10\}$~MB, and the number of sectors per chunk $s$ ranges over $\{20,40,60,80,100\}$. The baseline setting is $m=2$, $B=1$~MB, and $s=20$. The number of chunks per file $n$ is not treated as an independent parameter. Since each sector is represented by one field element of approximately $|p|=256$ bits, one encoded chunk contains $32s$ bytes. Therefore, for a file of size $B$ bytes, we set
 \begin{equation}
 n=\max\left\{c,\left\lceil \frac{B}{32s}\right\rceil\right\}.
 \label{eq:n_from_size}
@@ -1250,7 +1251,7 @@ To achieve a target detection rate $1-\epsilon$ against corruption ratio $\rho$,
 
 \subsection{Performance Results}
 
-To evaluate the computational behavior under the above parameter setting, we use the calibrated finite-field, group, hash-to-curve, and pairing latencies in Table~\ref{tab:primitive_latency}, and then instantiate the protocol-level operation counts of each implemented scheme. This methodology avoids repeatedly materializing large encoded files while preserving the workload scale specified by $m$, $B$, $s$, $c$, and $n$. In this section, audit overhead denotes the online cost of one audit round after data have been stored and tagged; therefore, the reported audit time is the sum of \textsf{ProofGen} and \textsf{Verify}, excluding the one-time \textsf{Store} phase.
+To evaluate the computational behavior under the above parameter setting, we execute each implemented scheme end-to-end on simulated file contents. For every workload point, the benchmark first deterministically generates the required field elements, then invokes the corresponding \textsf{Store}, challenge-generation, \textsf{ProofGen}, and \textsf{Verify} routines in the source implementation. The measured phase times are written directly to CSV and then plotted without operation-count extrapolation. In this section, audit overhead denotes the online cost of one audit round after data have been stored and tagged; therefore, the reported audit time is the sum of challenge generation, \textsf{ProofGen}, and \textsf{Verify}, excluding the one-time \textsf{Store} phase.
 
 \begin{figure*}[t]
 \centering
@@ -1275,7 +1276,7 @@ To evaluate the computational behavior under the above parameter setting, we use
 
 \begin{figure*}[t]
 \centering
-\subfloat[Store, proof generation, and verification overhead at the baseline setting.]{
+\subfloat[Store, challenge generation, proof generation, and verification overhead at the baseline setting.]{
 \includegraphics[width=0.48\textwidth]{figures/vi_evaluation/baseline_phase_overhead.pdf}
 \label{fig:baseline_phase_overhead}}
 \hfill
@@ -1286,15 +1287,15 @@ To evaluate the computational behavior under the above parameter setting, we use
 \label{fig:vi_aggregate_overhead}
 \end{figure*}
 
-Fig.~\ref{fig:audit_vs_m} shows that the audit overhead of all schemes increases with the batch size, because each additional file contributes challenged sectors and verification terms. FoldAudit remains close to the most efficient compared schemes across the whole range. Its average audit time over all varied workloads is $0.7576$~s, compared with $0.7520$~s for Yu et al.~\cite{YuTC25} and $0.7097$~s for Xu et al.~\cite{XuTIFS26}. The small additional cost comes from FoldAudit's folded KZG consistency terms and explicit per-file authentication material. In return, FoldAudit provides a unified multi-file audit equation with two pairings and a batch-oriented proof structure, avoiding the heavier verification behavior of Miao et al.~\cite{MiaoSCIS2026} and Zhang et al.~\cite{ZhangTPDS23}, whose average audit times are $1.4837$~s and $2.1482$~s, respectively.
+Fig.~\ref{fig:audit_vs_m} shows that the audit overhead of all schemes increases with the batch size, because each additional file contributes challenged sectors and verification terms. FoldAudit remains close to the most efficient compared schemes across the whole range. Its average audit time over all source-executed workloads is $0.2039$~s, compared with $0.2073$~s for Yu et al.~\cite{YuTC25} and $0.2006$~s for Xu et al.~\cite{XuTIFS26}. The small additional cost comes from FoldAudit's folded KZG consistency terms and explicit per-file authentication material. In return, FoldAudit provides a unified multi-file audit equation with two pairings and a batch-oriented proof structure, avoiding the heavier verification behavior of Miao et al.~\cite{MiaoSCIS2026} and Zhang et al.~\cite{ZhangTPDS23}, whose average audit times are $0.3663$~s and $0.5427$~s, respectively.
 
-Fig.~\ref{fig:store_vs_file_size} reports the storage-generation cost as the file size grows from $1$~MB to $100$~MB. This phase is dominated by tag generation over all encoded chunks and therefore grows with $mn$. FoldAudit has the same asymptotic storage-generation cost $O(mnsE)$ as Yu et al.~\cite{YuTC25} and Xu et al.~\cite{XuTIFS26}, which is reflected by the nearly identical trend. Zhang et al.~\cite{ZhangTPDS23} and Miao et al.~\cite{MiaoSCIS2026} require additional group/hash-to-curve work during tag construction, so their setup cost is higher under the same backend. At the largest tested point, $B=100$~MB and $s=60$ imply $n=52084$ encoded chunks per file under Eq.~\eqref{eq:n_from_size}, demonstrating that the plotted storage phase captures the intended large-file regime rather than only small toy inputs.
+Fig.~\ref{fig:store_vs_file_size} reports the storage-generation cost as the file size grows from $1$~MB to $10$~MB under direct source execution. This phase is dominated by tag generation over all encoded chunks and therefore grows with $mn$. FoldAudit has the same asymptotic storage-generation cost $O(mnE)$ as Yu et al.~\cite{YuTC25} and Xu et al.~\cite{XuTIFS26} under the DO-known trapdoor computation. Zhang et al.~\cite{ZhangTPDS23} and Miao et al.~\cite{MiaoSCIS2026} require additional group/hash-to-curve work during tag construction, so their setup cost is higher under the same backend. At the largest directly executed point, $B=10$~MB and $s=20$ imply $n=15625$ encoded chunks per file under Eq.~\eqref{eq:n_from_size}. Larger dense sweeps, such as repeatedly executing the full storage phase up to $100$~MB for every compared scheme, are dominated by tag generation and are therefore better suited to a separate extrapolated study if one wants to avoid multi-hour benchmarking runs.
 
 Fig.~\ref{fig:proofgen_vs_s} evaluates the effect of the number of sectors per chunk. Since $c$ is fixed at $690$, increasing $s$ enlarges the per-chunk polynomial representation and the field aggregation work in \textsf{ProofGen}. FoldAudit scales linearly in $s$ for witness-related group operations, matching the complexity $(2ms+m)E$ in Table~\ref{tab:computation}. It is therefore substantially below schemes whose proof generation contains terms proportional to $mc$ group operations, while remaining above schemes that only aggregate a smaller number of group elements.
 
 Fig.~\ref{fig:verify_vs_s} shows that verification is almost insensitive to $s$ for all compared schemes. This is expected because verification is governed mainly by the challenge size $c$, the batch size $m$, and a small number of pairings, rather than by the sector count of each chunk. FoldAudit preserves this desirable property: once the server has compressed the challenged sectors into folded polynomial commitments and witnesses, the verifier checks a compact folded equation with two pairings and $O(mc)$ group operations.
 
-The phase-level comparison in Fig.~\ref{fig:baseline_phase_overhead} further illustrates that \textsf{Store} is the dominant one-time cost, whereas repeated audits are governed by \textsf{ProofGen} and \textsf{Verify}. This is favorable for periodic auditing scenarios: files are stored and tagged once, but audits are executed repeatedly. As summarized in Fig.~\ref{fig:mean_audit_overhead}, FoldAudit is not the absolute minimum in raw local computation, but it stays within the same order and close numerical range as the fastest schemes while providing multi-file folded verification and explicit sampled-tag authentication. This makes the design suitable for batch audit settings where verifier-side compactness and cross-file aggregation are more important than minimizing a single isolated group-operation count.
+The phase-level comparison in Fig.~\ref{fig:baseline_phase_overhead} further illustrates that \textsf{Store} is the dominant one-time cost, whereas repeated audits are governed by challenge generation, \textsf{ProofGen}, and \textsf{Verify}. This is favorable for periodic auditing scenarios: files are stored and tagged once, but audits are executed repeatedly. As summarized in Fig.~\ref{fig:mean_audit_overhead}, FoldAudit is not the absolute minimum in raw local computation, but it stays within the same order and close numerical range as the fastest schemes while providing multi-file folded verification and explicit sampled-tag authentication. This makes the design suitable for batch audit settings where verifier-side compactness and cross-file aggregation are more important than minimizing a single isolated group-operation count.
 
 \section{Conclusion}
 
