@@ -411,10 +411,7 @@ For $f(X)=\sum_{k=0}^{s-1}a_kX^k\in\FF_p^{<s}[X]$, the KZG commitment is
     C_f := g^{f(\tau)}
     =\prod_{k=0}^{s-1}\left(g^{\tau^k}\right)^{a_k}\in\GG_1 .
 \end{equation}
-The commitment is additively homomorphic in the exponent: for commitments $C_f$ and $C_q$ and scalars $\alpha,\beta\in\FF_p$, one has
-$
-C_f^\alpha C_q^\beta=g^{(\alpha f+\beta q)(\tau)}.
-$
+
 
 \paragraph{Opening and Verification.}
 To open $C_f$ at point $r\in\FF_p$ with value $y=f(r)$, the prover computes
@@ -432,70 +429,6 @@ $
 f(\tau)-y=(\tau-r)w(\tau).
 $
 Under the standard $q$-SDH assumption for the SRS degree bound, KZG commitments are computationally binding: a PPT adversary cannot open the same commitment at the same point to two distinct values, nor open it to a value inconsistent with the committed polynomial, except with negligible probability.
-
-
-\subsection{Multi-Polynomial Batch Evaluation (MPBE)}
-\label{sec:multi_poly_batch_evaluation}
-Batch verification in FoldAudit is based on random linear folding of multiple KZG quotient equations. Suppose the verifier must check $m$ claims $f_i(r_i)=y_i$ with commitments $b_i=g^{f_i(\tau)}$ and quotient commitments $C_{w_i}=g^{w_i(\tau)}$. The individual KZG relation for file $i$ can be written as
-\begin{equation}\label{eq:individual_kzg_relation}
-    e\!\left(b_i g^{-y_i} C_{w_i}^{r_i},h\right)
-    \stackrel{?}{=}
-    e(C_{w_i},h^\tau).
-\end{equation}
-Indeed, if $w_i(X)=(f_i(X)-y_i)/(X-r_i)$, then
-$
-b_i g^{-y_i}C_{w_i}^{r_i}=g^{\tau w_i(\tau)}.
-$
-
-Verifying all equations in~\eqref{eq:individual_kzg_relation} separately would require $O(m)$ pairings. Instead, after all commitments are fixed, the verifier samples a Fiat--Shamir folding challenge $\rho\in\FF_p$ and checks a single folded equation:
-\begin{equation}\label{eq:folded_kzg_relation}
-    e\!\left(
-    \prod_{i=1}^m
-    \left(b_i g^{-y_i} C_{w_i}^{r_i}\right)^{\rho^{i-1}},
-    h\right)
-    \stackrel{?}{=}
-    e\!\left(
-    \prod_{i=1}^m C_{w_i}^{\rho^{i-1}},
-    h^\tau\right).
-\end{equation}
-If any individual equation has a non-zero exponent defect $\Delta_i$, then the folded equation can still hold only when $\sum_i\rho^{i-1}\Delta_i=0$, which occurs with probability at most $(m-1)/p$ by Lemma~\ref{lem:random_linear_folding}. This is the algebraic source of the batch soundness bound used in Theorem~\ref{thm:soundness}.
-
-FoldAudit masks each value $y_i$ as
-\[
-    \tilde y_i=y_i+\mu_i,\qquad R_i=g^{\mu_i},
-\]
-where $\mu_i\leftarrow\FF_p$ is freshly sampled in every audit round. The verifier never receives $y_i$ directly; instead, it substitutes $R_i g^{-\tilde y_i}=g^{-y_i}$ inside the KZG opening equation. Thus the masked per-file relation becomes
-\begin{equation}\label{eq:masked_individual_relation}
-    e\!\left(b_iR_i g^{-\tilde y_i} C_{w_i}^{r_i},h\right)
-    \stackrel{?}{=}
-    e(C_{w_i},h^\tau).
-\end{equation}
-To make the mask witness extractable in the soundness proof, FoldAudit attaches a Fiat--Shamir Schnorr proof of knowledge for every $R_i$. Let
-\[
-    \mathsf{stmt}_R=(\mathsf{chal},\{\Gamma_i\},\{b_i\},\{\tilde y_i\},\{R_i\},\{C_{w_i}\}).
-\]
-For each $i$, the prover samples $a_i\leftarrow\FF_p$, computes $A_i=g^{a_i}$, derives
-\[
-    c_i=H_2(\mathsf{mask\mbox{-}pok},\mathsf{stmt}_R,i,A_i),
-\]
-and returns $z_i=a_i+c_i\mu_i$. The Schnorr proof is
-\[
-    \Pi_R=\{(A_i,z_i)\}_{i=1}^m,
-\]
-and verification checks $g^{z_i}=A_iR_i^{c_i}$ for every $i$. By special soundness of Schnorr proofs and the Fiat--Shamir transform in the random oracle model, an accepting proof yields an extractable witness $\mu_i$ satisfying $R_i=g^{\mu_i}$.
-
-After all proof components, including $\Pi_R$, are fixed, the verifier derives $\rho$ and checks the folded masked equation
-\begin{equation}\label{eq:masked_folded_relation}
-    e\!\left(
-    \prod_{i=1}^m
-    \left(b_iR_i g^{-\tilde y_i}C_{w_i}^{r_i}\right)^{\rho^{i-1}},
-    h\right)
-    \stackrel{?}{=}
-    e\!\left(
-    \prod_{i=1}^m C_{w_i}^{\rho^{i-1}},
-    h^\tau\right).
-\end{equation}
-This restores the basic additive-mask version $\tilde y_i\leftarrow y_i+\mu_i$. Since $R_i=g^{\mu_i}$ is public and single-base, the masking is not statistically hiding for low-entropy $y_i$: a verifier that can enumerate candidates may test $R_i\stackrel{?}{=}g^{\tilde y_i-y'}$. The privacy statement for this version therefore requires challenged evaluations to have sufficient min-entropy against feasible enumeration.
 
 
 \subsection{Merkle Tree}
@@ -702,6 +635,20 @@ Upon receiving $\mathsf{chal}=(J,\{v_{i,j}\}_{i\in[m],j\in J},\{r_i\}_{i=1}^m,\m
 \paragraph{\textbf{Verification}}
 
 The $\Verify$ algorithm validates index authenticity, tag aggregation, transcript binding, and quotient consistency. The quotient consistency check is performed by one folded pairing equation over the masked KZG openings.
+
+For each file, a valid quotient witness must certify
+$
+f_i(\tau)-y_i=(\tau-r_i)w_i(\tau)
+$,
+which is equivalently checked in pairing form as
+$
+e(b_i g^{-y_i}C_{w_i}^{r_i},h)=e(C_{w_i},h^\tau)
+$.
+Since the verifier receives only the masked value $\tilde y_i=y_i+\mu_i$, it uses the public commitment $R_i=g^{\mu_i}$ to replace $g^{-y_i}$ by $R_i g^{-\tilde y_i}$. Thus the per-file masked relation becomes
+$
+e(b_iR_i g^{-\tilde y_i}C_{w_i}^{r_i},h)=e(C_{w_i},h^\tau)
+$.
+Checking these $m$ relations separately would require $O(m)$ pairing checks, so FoldAudit folds them into one equation using the Fiat--Shamir scalar $\rho$ derived after all proof components are fixed. If any per-file relation has a nonzero exponent defect, the folded equation can still accept only when the nonzero polynomial $\sum_i\rho^{i-1}\Delta_i$ vanishes, which occurs with probability at most $(m-1)/p$ by Lemma~\ref{lem:random_linear_folding}.
 
 
 \begin{algorithm}[t]
@@ -984,9 +931,17 @@ Recent years have witnessed significant advances in provable data possession (PD
 
 Xu et al.~\cite{XuTIFS26} proposed MPA, a lightweight and updatable auditing scheme that combines polynomial commitments with Merkle authentication for decentralized multi-copy storage. MPA supports full aggregation across files and providers and uses a blockchain-assisted commit-and-reveal procedure to derive unpredictable challenges. Its proof-generation cost is dominated by a degree-$(s-1)$ KZG witness, while the Merkle layer gives efficient block-level updates. However, the multi-file verification equation aggregates all local proofs at a shared evaluation point $r$. Therefore, the batch check does not provide independent per-file evaluation points or an explicit random-folding soundness bound for cross-file cancellation; it verifies a globally aggregated opening together with Merkle membership paths.
 
-Zhang et al.~\cite{ZhangTPDS23} addressed on-chain overhead for decentralized multi-copy auditing by instantiating the PCS-MPAP batch polynomial commitment. Their batch scheme assigns distinct evaluation points $\{r_l\}_{l=1}^d$ to files and publishes a constant-size per-SSP proof $(\sigma'_i,W_i,W'_i,E_i)$. This construction substantially reduces on-chain storage and avoids linear growth in the number of files. Nevertheless, the batch proof exposes the scalar $E_i=\sum_{l=1}^d \beta_l S_{l,i}$, i.e., an unmasked linear combination of file evaluation claims. On a transparent ledger, such plaintext evaluation combinations do not provide statistical evaluation privacy against an honest-but-curious verifier. The scheme also focuses on multi-copy auditing rather than dynamic file updates.
+Zhang et al.~\cite{ZhangTPDS23} addressed on-chain overhead for decentralized multi-copy auditing by instantiating the PCS-MPAP batch polynomial commitment. Their batch scheme assigns distinct evaluation points $\{r_l\}_{l=1}^d$ to files and publishes a constant-size per-SSP proof $(\sigma'_i,W_i,W'_i,E_i)$. This construction substantially reduces on-chain storage and avoids linear growth in the number of files. Nevertheless, the batch proof exposes the scalar
+\[
+\begin{aligned}
+    E_i&=\sum_{l=1}^d \beta_l S_{l,i},\\
+    S_{l,i}&=F_{l,M_i}(r_l)\\
+    &=\sum_{(a_j,v_j)\in Q_l} v_j f_{l,m_i,a_j}(r_l),
+\end{aligned}
+\]
+i.e., an unmasked linear combination of challenged file evaluations. Since the challenge transcript publishes $\{\beta_l,r_l,Q_l\}$, each audit round reveals a public linear equation in the challenged block-polynomial coefficients. Across repeated audits with linearly independent challenge vectors, these equations can be accumulated to recover evaluation values and, eventually, the underlying data-polynomial coefficients for repeatedly challenged blocks. Thus, on a transparent ledger, the PCS-MPAP batch variant of ZhangTPDS23 does not provide evaluation privacy against an honest-but-curious verifier or public observer. The scheme also focuses on multi-copy auditing rather than dynamic file updates.
 
-Yu et al.~\cite{YuTC25} designed a storage verification scheme for resource-constrained Industrial IoT environments. It combines a homomorphic hash function, polynomial commitments, and a Tag-IMHT authenticated structure to eliminate pairings from verification and to support chunk-level modification, insertion, and deletion. The privacy-enhanced variant masks the proof polynomial by adding a random term derived from $(\beta,\eta)$ and returns an additional masking tag $B$. This protects the challenged polynomial from interpolation attacks in the single-file setting. The scheme, however, does not provide a native multi-file batch verification equation; auditing multiple files requires independent protocol executions.
+Yu et al.~\cite{YuTC25} designed a storage verification scheme for resource-constrained Industrial IoT environments. It combines a homomorphic hash function, polynomial commitments, and a Tag-IMHT authenticated structure to eliminate pairings from verification and to support chunk-level modification, insertion, and deletion. Its privacy-enhanced variant adds a random constant term $\beta\eta$ to the proof polynomial and returns an additional masking tag $B$. However, the proof still discloses the quotient polynomial $Z_{\mathrm{prf}}(x)=(P_{\mathrm{prf}}(x)-P_{\mathrm{prf}}(z))/(x-z)$. Since the constant mask cancels in this quotient, $Z_{\mathrm{prf}}(x)$ reveals the non-constant coefficients of the challenged aggregate polynomial; repeated audits with different challenge coefficients may therefore leak the underlying data polynomial, while only the constant term is protected by $\beta\eta$. The scheme also does not provide a native multi-file batch verification equation; auditing multiple files requires independent protocol executions.
 
 Miao et al.~\cite{MiaoSCIS2026} proposed MKPDP, a blockchain-assisted multi-keyword searchable PDP scheme. Its index matrix and match indexes let the verifier check that all files matching the queried keywords participate in the audit, thereby addressing search-result integrity, pre-matching, and pre-computation attacks. The proof $\{T,\mu_1,R\}$ aggregates authenticators over the matched files and masks the aggregate data value as $\mu_1=\mu-rh_1(T_w,R)$. Thus, MKPDP supports keyword-filtered multi-file auditing and data privacy, but it is not a polynomial-opening batch protocol and does not provide independent per-file evaluation points or a tight finite-field folding bound.
 
@@ -1005,7 +960,7 @@ Despite these advances, existing schemes leave at least one of the following gap
     \hline
     XuTIFS26~\cite{XuTIFS26} & \cmark & \xmark & \xmark & \xmark & \cmark & \xmark \\
     ZhangTPDS23~\cite{ZhangTPDS23} & \cmark & \cmark & \xmark & \xmark & \xmark & \cmark \\
-    YuTC25~\cite{YuTC25} & \xmark & -- & \xmark & \cmark$^\dag$ & \cmark & -- \\
+    YuTC25~\cite{YuTC25} & \xmark & -- & \xmark & \xmark$^\dag$ & \cmark & -- \\
     MiaoSCIS2026~\cite{MiaoSCIS2026} & \cmark$^\ddag$ & -- & \xmark & \cmark & \cmark$^\S$ & \xmark \\
     \textbf{Ours} & \cmark & \cmark & \cmark & \cmark$^\ast$ & \cmark & \cmark \\
     \hline
@@ -1023,7 +978,7 @@ Despite these advances, existing schemes leave at least one of the following gap
   \end{tabular}
   \begin{tabular}{p{0.96\textwidth}}
     $--$: not applicable because the scheme does not use polynomial multi-file batch evaluation.
-    $\dag$: only the privacy-enhanced YuTC25 variant masks the proof polynomial; the basic variant is not private against interpolation.
+    $\dag$: YuTC25's privacy-enhanced variant masks only the constant term by $\beta\eta$; its disclosed quotient polynomial can leak non-constant data-polynomial coefficients under repeated audits.
     $\ddag$: MKPDP audits keyword-matched files in aggregate rather than arbitrary polynomial openings.
     $\S$: MKPDP supports file add/delete operations; YuTC25 and XuTIFS26 support chunk/block-level updates, while FoldAudit supports stateless file addition and active audit-set removal.
     $^\ast$: FoldAudit uses additive one-time masks with Schnorr mask PoK; privacy requires challenged evaluations to have sufficient min-entropy against candidate enumeration.
