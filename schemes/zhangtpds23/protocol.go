@@ -1,6 +1,7 @@
 package zhangtpds23
 
 import (
+	"bytes"
 	"fmt"
 	"math/big"
 
@@ -30,11 +31,12 @@ type StoredBatch struct {
 }
 
 type Challenge struct {
-	Indices []int
+	Indices [][]int
 	Coeffs  [][]*big.Int
 	Points  []*big.Int
 	Gamma   *big.Int
 	Z       *big.Int
+	Seed    []byte
 }
 
 type Proof struct {
@@ -82,30 +84,50 @@ func (p *Protocol) Store(data [][][]*big.Int) (*StoredBatch, error) {
 	return out, nil
 }
 
+func (p *Protocol) TagVerify(stored *StoredBatch) bool {
+	if stored == nil || len(stored.Files) != p.M {
+		return false
+	}
+	for _, file := range stored.Files {
+		if len(file.Blocks) != p.N || len(file.Tags) != p.N {
+			return false
+		}
+		for j := range file.Blocks {
+			body := benchcore.G1Add(hashIndex(file.FileID, j), benchcore.CommitG1(p.SRSG1, file.Blocks[j]))
+			if !benchcore.PairingEqual(file.Tags[j], p.G2, body, p.V) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (p *Protocol) Challenge(c int) Challenge {
+	return p.ChallengeFromSeed([]byte("zhangtpds23:default-challenge"), c)
+}
+
+func (p *Protocol) ChallengeFromSeed(seed []byte, c int) Challenge {
 	if c > p.N {
 		c = p.N
 	}
-	indices := make([]int, c)
-	for i := range indices {
-		indices[i] = i
-	}
+	indices := make([][]int, p.M)
 	coeffs := make([][]*big.Int, p.M)
 	for i := range coeffs {
+		indices[i] = uniqueIndices("zhangtpds23:challenge:index", seedFor(seed, i), c, p.N)
 		coeffs[i] = make([]*big.Int, c)
 		for j := range coeffs[i] {
-			coeffs[i][j] = benchcore.Scalar(fmt.Sprintf("zhangtpds23/chal/coeff/%d", i), j)
+			coeffs[i][j] = benchcore.ScalarFromBytes("zhangtpds23:challenge:coeff", seed, benchcore.IntBytes(i), benchcore.IntBytes(j))
 		}
 	}
 	points := make([]*big.Int, p.M)
 	for i := range points {
-		points[i] = benchcore.Scalar("zhangtpds23/chal/r", i)
+		points[i] = benchcore.ScalarFromBytes("zhangtpds23:challenge:r", seed, benchcore.IntBytes(i))
 	}
-	z := benchcore.Scalar("zhangtpds23/chal/z", c)
+	z := benchcore.ScalarFromBytes("zhangtpds23:challenge:z", seed, benchcore.IntBytes(c))
 	if benchcore.Sub(p.alpha, z).Sign() == 0 {
 		z = benchcore.Add(z, benchcore.One())
 	}
-	return Challenge{Indices: indices, Coeffs: coeffs, Points: points, Gamma: benchcore.Scalar("zhangtpds23/chal/gamma", c), Z: z}
+	return Challenge{Indices: indices, Coeffs: coeffs, Points: points, Gamma: benchcore.ScalarFromBytes("zhangtpds23:challenge:gamma", seed), Z: z, Seed: append([]byte(nil), seed...)}
 }
 
 func (p *Protocol) Prove(stored *StoredBatch, chal Challenge) (*Proof, error) {
@@ -120,7 +142,10 @@ func (p *Protocol) Prove(stored *StoredBatch, chal Challenge) (*Proof, error) {
 	for i, file := range stored.Files {
 		agg := benchcore.NewPoly([]*big.Int{benchcore.Zero()})
 		tagAgg := benchcore.G1Zero()
-		for pos, index := range chal.Indices {
+		if len(chal.Indices[i]) != len(chal.Coeffs[i]) {
+			return nil, fmt.Errorf("file %d challenge dimension mismatch", i)
+		}
+		for pos, index := range chal.Indices[i] {
 			agg = agg.Add(file.Blocks[index].Scale(chal.Coeffs[i][pos]))
 			tagAgg = benchcore.G1Add(tagAgg, benchcore.G1Mul(file.Tags[index], chal.Coeffs[i][pos]))
 		}
@@ -161,7 +186,10 @@ func (p *Protocol) Verify(stored *StoredBatch, chal Challenge, proof *Proof) boo
 	betas := p.betas(chal)
 	zeta := benchcore.G1Zero()
 	for i, file := range stored.Files {
-		for pos, index := range chal.Indices {
+		if len(chal.Indices[i]) != len(chal.Coeffs[i]) {
+			return false
+		}
+		for pos, index := range chal.Indices[i] {
 			term := benchcore.G1Mul(hashIndex(file.FileID, index), chal.Coeffs[i][pos])
 			zeta = benchcore.G1Add(zeta, benchcore.G1Mul(term, betas[i]))
 		}
@@ -195,4 +223,32 @@ func zExcept(points []*big.Int, skip int) benchcore.Poly {
 
 func hashIndex(fileID []byte, index int) *bn256.G1 {
 	return benchcore.HashToG1Bytes("zhangtpds23:H", fileID, benchcore.IntBytes(index))
+}
+
+func uniqueIndices(label string, seed []byte, c, n int) []int {
+	if c > n {
+		c = n
+	}
+	selected := make(map[int]struct{}, c)
+	for ctr := 0; len(selected) < c; ctr++ {
+		x := benchcore.ScalarFromBytes(label, seed, benchcore.IntBytes(ctr))
+		selected[int(new(big.Int).Mod(x, big.NewInt(int64(n))).Int64())] = struct{}{}
+	}
+	out := make([]int, 0, c)
+	for index := range selected {
+		out = append(out, index)
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j-1] > out[j]; j-- {
+			out[j-1], out[j] = out[j], out[j-1]
+		}
+	}
+	return out
+}
+
+func seedFor(seed []byte, index int) []byte {
+	var out bytes.Buffer
+	benchcore.WriteFramed(&out, seed)
+	benchcore.WriteFramed(&out, benchcore.IntBytes(index))
+	return out.Bytes()
 }

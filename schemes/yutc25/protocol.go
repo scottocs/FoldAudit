@@ -22,10 +22,17 @@ type StoredData struct {
 	Root   []byte
 }
 
+type StoredBatch struct {
+	Files []*StoredData
+	Roots [][]byte
+}
+
 type Challenge struct {
 	Indices []int
 	Coeffs  []*big.Int
 	Z       *big.Int
+	K1      []byte
+	K2      []byte
 }
 
 type TagOpening struct {
@@ -39,6 +46,14 @@ type Proof struct {
 	Openings []TagOpening
 	Value    *big.Int
 	B        *bn256.G1
+}
+
+type BatchChallenge struct {
+	FileChallenges []Challenge
+}
+
+type BatchProof struct {
+	Proofs []*Proof
 }
 
 func NewProtocol(n, s int) *Protocol {
@@ -75,17 +90,51 @@ func (p *Protocol) Store(blocks [][]*big.Int) (*StoredData, error) {
 	return out, nil
 }
 
+func (p *Protocol) StoreBatch(files [][][]*big.Int) (*StoredBatch, error) {
+	out := &StoredBatch{Files: make([]*StoredData, len(files)), Roots: make([][]byte, len(files))}
+	for i, blocks := range files {
+		stored, err := p.Store(blocks)
+		if err != nil {
+			return nil, fmt.Errorf("file %d: %w", i, err)
+		}
+		out.Files[i] = stored
+		out.Roots[i] = benchcore.CloneBytes(stored.Root)
+	}
+	return out, nil
+}
+
 func (p *Protocol) Challenge(c int) Challenge {
+	return p.ChallengeFromKeys([]byte("default-k1"), []byte("default-k2"), c)
+}
+
+func (p *Protocol) ChallengeFromKeys(k1, k2 []byte, c int) Challenge {
 	if c > p.N {
 		c = p.N
 	}
-	indices := make([]int, c)
+	indices := uniqueIndices("yutc25:prp", k1, c, p.N)
 	coeffs := make([]*big.Int, c)
 	for i := 0; i < c; i++ {
-		indices[i] = i
-		coeffs[i] = benchcore.Scalar("yutc25/chal/coeff", i)
+		coeffs[i] = benchcore.ScalarFromBytes("yutc25:prf:coeff", k2, benchcore.IntBytes(i))
 	}
-	return Challenge{Indices: indices, Coeffs: coeffs, Z: benchcore.Scalar("yutc25/chal/z", c)}
+	return Challenge{
+		Indices: indices,
+		Coeffs:  coeffs,
+		Z:       benchcore.ScalarFromBytes("yutc25:prf:z", k2, benchcore.IntBytes(c)),
+		K1:      append([]byte(nil), k1...),
+		K2:      append([]byte(nil), k2...),
+	}
+}
+
+func (p *Protocol) BatchChallenge(files, c int) BatchChallenge {
+	out := BatchChallenge{FileChallenges: make([]Challenge, files)}
+	for i := range out.FileChallenges {
+		out.FileChallenges[i] = p.ChallengeFromKeys(
+			[]byte(fmt.Sprintf("batch-k1-%d", i)),
+			[]byte(fmt.Sprintf("batch-k2-%d", i)),
+			c,
+		)
+	}
+	return out
 }
 
 func (p *Protocol) Prove(stored *StoredData, chal Challenge) (*Proof, error) {
@@ -135,6 +184,54 @@ func (p *Protocol) Verify(root []byte, chal Challenge, proof *Proof) bool {
 	return benchcore.G1Eq(left, right)
 }
 
+func (p *Protocol) ProveBatch(stored *StoredBatch, chal BatchChallenge) (*BatchProof, error) {
+	if stored == nil || len(stored.Files) != len(chal.FileChallenges) {
+		return nil, fmt.Errorf("batch dimension mismatch")
+	}
+	out := &BatchProof{Proofs: make([]*Proof, len(stored.Files))}
+	for i := range stored.Files {
+		proof, err := p.Prove(stored.Files[i], chal.FileChallenges[i])
+		if err != nil {
+			return nil, fmt.Errorf("file %d: %w", i, err)
+		}
+		out.Proofs[i] = proof
+	}
+	return out, nil
+}
+
+func (p *Protocol) VerifyBatch(stored *StoredBatch, chal BatchChallenge, proof *BatchProof) bool {
+	if stored == nil || proof == nil || len(stored.Files) != len(chal.FileChallenges) || len(proof.Proofs) != len(stored.Files) {
+		return false
+	}
+	for i := range stored.Files {
+		if !p.Verify(stored.Roots[i], chal.FileChallenges[i], proof.Proofs[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 func yuLeaf(tag *bn256.G1) []byte {
 	return benchcore.HashBytes("yutc25:tag-imht", tag.Marshal())
+}
+
+func uniqueIndices(label string, seed []byte, c, n int) []int {
+	if c > n {
+		c = n
+	}
+	selected := make(map[int]struct{}, c)
+	for ctr := 0; len(selected) < c; ctr++ {
+		x := benchcore.ScalarFromBytes(label, seed, benchcore.IntBytes(ctr))
+		selected[int(new(big.Int).Mod(x, big.NewInt(int64(n))).Int64())] = struct{}{}
+	}
+	out := make([]int, 0, c)
+	for index := range selected {
+		out = append(out, index)
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j-1] > out[j]; j-- {
+			out[j-1], out[j] = out[j], out[j-1]
+		}
+	}
+	return out
 }

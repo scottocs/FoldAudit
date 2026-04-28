@@ -34,6 +34,7 @@ type Challenge struct {
 	Indices []int
 	Coeffs  []*big.Int
 	R       *big.Int
+	Seed    []byte
 }
 
 type TagOpening struct {
@@ -102,17 +103,49 @@ func (p *Protocol) Store(data [][][]*big.Int) (*StoredBatch, error) {
 	return out, nil
 }
 
+func (p *Protocol) TagVerify(stored *StoredBatch) bool {
+	if stored == nil || len(stored.Files) != p.M || len(stored.Roots) != p.M {
+		return false
+	}
+	for i, file := range stored.Files {
+		if len(file.Blocks) != p.N || len(file.Tags) != p.N {
+			return false
+		}
+		leaves := make([][]byte, p.N)
+		for j := 0; j < p.N; j++ {
+			recomputed := benchcore.CommitG1(p.SRSG1, file.Blocks[j])
+			if !benchcore.G1Eq(recomputed, file.Tags[j]) {
+				return false
+			}
+			leaves[j] = xuLeaf(recomputed)
+		}
+		tree, err := benchcore.NewMerkleTree(leaves)
+		if err != nil || string(tree.Root) != string(stored.Roots[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 func (p *Protocol) Challenge(c int) Challenge {
+	return p.ChallengeFromSeed([]byte("xutifs26:commit-reveal:default"), c)
+}
+
+func (p *Protocol) ChallengeFromSeed(seed []byte, c int) Challenge {
 	if c > p.N {
 		c = p.N
 	}
-	indices := make([]int, c)
+	indices := uniqueIndices("xutifs26:challenge:index", seed, c, p.N)
 	coeffs := make([]*big.Int, c)
 	for i := 0; i < c; i++ {
-		indices[i] = i
-		coeffs[i] = benchcore.Scalar("xutifs26/chal/coeff", i)
+		coeffs[i] = benchcore.ScalarFromBytes("xutifs26:challenge:coeff", seed, benchcore.IntBytes(i))
 	}
-	return Challenge{Indices: indices, Coeffs: coeffs, R: benchcore.Scalar("xutifs26/chal/r", c)}
+	return Challenge{
+		Indices: indices,
+		Coeffs:  coeffs,
+		R:       benchcore.ScalarFromBytes("xutifs26:challenge:r", seed, benchcore.IntBytes(c)),
+		Seed:    append([]byte(nil), seed...),
+	}
 }
 
 func (p *Protocol) Prove(stored *StoredBatch, chal Challenge) (*Proof, error) {
@@ -165,4 +198,25 @@ func (p *Protocol) Verify(stored *StoredBatch, chal Challenge, proof *Proof) boo
 
 func xuLeaf(tag *bn256.G1) []byte {
 	return benchcore.HashBytes("xutifs26:leaf", tag.Marshal())
+}
+
+func uniqueIndices(label string, seed []byte, c, n int) []int {
+	if c > n {
+		c = n
+	}
+	selected := make(map[int]struct{}, c)
+	for ctr := 0; len(selected) < c; ctr++ {
+		x := benchcore.ScalarFromBytes(label, seed, benchcore.IntBytes(ctr))
+		selected[int(new(big.Int).Mod(x, big.NewInt(int64(n))).Int64())] = struct{}{}
+	}
+	out := make([]int, 0, c)
+	for index := range selected {
+		out = append(out, index)
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j-1] > out[j]; j-- {
+			out[j-1], out[j] = out[j], out[j-1]
+		}
+	}
+	return out
 }

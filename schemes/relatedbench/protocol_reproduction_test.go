@@ -18,7 +18,10 @@ func TestXuTIFS26ProtocolRound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chal := p.Challenge(c)
+	if !p.TagVerify(stored) {
+		t.Fatal("XuTIFS26 tag verification rejected honest storage")
+	}
+	chal := p.ChallengeFromSeed([]byte("xu-system-test"), c)
 	proof, err := p.Prove(stored, chal)
 	if err != nil {
 		t.Fatal(err)
@@ -33,23 +36,23 @@ func TestXuTIFS26ProtocolRound(t *testing.T) {
 }
 
 func TestYuTC25ProtocolRound(t *testing.T) {
-	n, s, c := 8, 4, 3
+	m, n, s, c := 3, 8, 4, 3
 	p := yutc25.NewProtocol(n, s)
-	stored, err := p.Store(fileBlocks(n, s, "yu"))
+	stored, err := p.StoreBatch(dataset(m, n, s, "yu"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	chal := p.Challenge(c)
-	proof, err := p.Prove(stored, chal)
+	chal := p.BatchChallenge(m, c)
+	proof, err := p.ProveBatch(stored, chal)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !p.Verify(stored.Root, chal, proof) {
-		t.Fatal("honest YuTC25 proof rejected")
+	if !p.VerifyBatch(stored, chal, proof) {
+		t.Fatal("honest YuTC25 batch proof rejected")
 	}
-	proof.Value = benchcore.Add(proof.Value, benchcore.One())
-	if p.Verify(stored.Root, chal, proof) {
-		t.Fatal("tampered YuTC25 proof accepted")
+	proof.Proofs[0].Value = benchcore.Add(proof.Proofs[0].Value, benchcore.One())
+	if p.VerifyBatch(stored, chal, proof) {
+		t.Fatal("tampered YuTC25 batch proof accepted")
 	}
 }
 
@@ -60,7 +63,10 @@ func TestZhangTPDS23ProtocolRound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chal := p.Challenge(c)
+	if !p.TagVerify(stored) {
+		t.Fatal("ZhangTPDS23 tag verification rejected honest storage")
+	}
+	chal := p.ChallengeFromSeed([]byte("zhang-system-test"), c)
 	proof, err := p.Prove(stored, chal)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +96,11 @@ func TestMiaoSCIS2026ProtocolRound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chal := p.Challenge([]string{"audit"}, c, len(files))
+	trap, err := p.Trapdoor(stored, []string{"audit"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chal := p.ChallengeWithTrapdoor(trap, c, len(files))
 	proof, err := p.Prove(stored, chal)
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +121,7 @@ func BenchmarkConcreteProtocolRounds(b *testing.B) {
 	b.Run("XuTIFS26/Prove", func(b *testing.B) {
 		p := xutifs26.NewProtocol(m, n, s)
 		stored, _ := p.Store(data)
-		chal := p.Challenge(c)
+		chal := p.ChallengeFromSeed([]byte("bench/xu"), c)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			if _, err := p.Prove(stored, chal); err != nil {
@@ -122,7 +132,7 @@ func BenchmarkConcreteProtocolRounds(b *testing.B) {
 	b.Run("XuTIFS26/Verify", func(b *testing.B) {
 		p := xutifs26.NewProtocol(m, n, s)
 		stored, _ := p.Store(data)
-		chal := p.Challenge(c)
+		chal := p.ChallengeFromSeed([]byte("bench/xu"), c)
 		proof, _ := p.Prove(stored, chal)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -135,7 +145,7 @@ func BenchmarkConcreteProtocolRounds(b *testing.B) {
 	b.Run("YuTC25/Prove", func(b *testing.B) {
 		p := yutc25.NewProtocol(n, s)
 		stored, _ := p.Store(fileBlocks(n, s, "bench/yu"))
-		chal := p.Challenge(c)
+		chal := p.BatchChallenge(1, c).FileChallenges[0]
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			if _, err := p.Prove(stored, chal); err != nil {
@@ -146,7 +156,7 @@ func BenchmarkConcreteProtocolRounds(b *testing.B) {
 	b.Run("YuTC25/Verify", func(b *testing.B) {
 		p := yutc25.NewProtocol(n, s)
 		stored, _ := p.Store(fileBlocks(n, s, "bench/yu"))
-		chal := p.Challenge(c)
+		chal := p.BatchChallenge(1, c).FileChallenges[0]
 		proof, _ := p.Prove(stored, chal)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -159,7 +169,7 @@ func BenchmarkConcreteProtocolRounds(b *testing.B) {
 	b.Run("ZhangTPDS23/Prove", func(b *testing.B) {
 		p := zhangtpds23.NewProtocol(m, n, s)
 		stored, _ := p.Store(data)
-		chal := p.Challenge(c)
+		chal := p.ChallengeFromSeed([]byte("bench/zhang"), c)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			if _, err := p.Prove(stored, chal); err != nil {
@@ -170,7 +180,7 @@ func BenchmarkConcreteProtocolRounds(b *testing.B) {
 	b.Run("ZhangTPDS23/Verify", func(b *testing.B) {
 		p := zhangtpds23.NewProtocol(m, n, s)
 		stored, _ := p.Store(data)
-		chal := p.Challenge(c)
+		chal := p.ChallengeFromSeed([]byte("bench/zhang"), c)
 		proof, _ := p.Prove(stored, chal)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -243,5 +253,9 @@ func miaoBenchInstance(n, c int) (*miaoscis2026.Protocol, *miaoscis2026.StoredDa
 	if err != nil {
 		panic(err)
 	}
-	return p, stored, p.Challenge([]string{"audit"}, c, len(files))
+	trap, err := p.Trapdoor(stored, []string{"audit"})
+	if err != nil {
+		panic(err)
+	}
+	return p, stored, p.ChallengeWithTrapdoor(trap, c, len(files))
 }

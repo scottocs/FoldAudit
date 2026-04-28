@@ -1,6 +1,7 @@
 package miaoscis2026
 
 import (
+	"bytes"
 	"fmt"
 	"math/big"
 
@@ -28,13 +29,29 @@ type File struct {
 }
 
 type StoredData struct {
-	Files []File
+	Files         []File
+	KeywordRows   map[string]int
+	EncryptedRows map[int][]byte
+	MatrixSize    int
+}
+
+type TrapdoorToken struct {
+	Keyword string
+	Row     int
+	Pad     []byte
+}
+
+type Trapdoor struct {
+	Tokens []TrapdoorToken
 }
 
 type Challenge struct {
 	Keywords []string
 	Indices  []int
 	Coeffs   [][]*big.Int
+	Trapdoor Trapdoor
+	K1       []byte
+	K2       []byte
 }
 
 type Proof struct {
@@ -59,7 +76,30 @@ func (p *Protocol) Store(files []struct {
 	Keywords []string
 	Blocks   []*big.Int
 }) (*StoredData, error) {
-	out := &StoredData{Files: make([]File, len(files))}
+	out := &StoredData{
+		Files:         make([]File, len(files)),
+		KeywordRows:   make(map[string]int),
+		EncryptedRows: make(map[int][]byte),
+	}
+	keywordSet := make(map[string]struct{})
+	for _, input := range files {
+		for _, keyword := range input.Keywords {
+			keywordSet[keyword] = struct{}{}
+		}
+	}
+	out.MatrixSize = 2*max(len(files), len(keywordSet)) + 1
+	row := 0
+	for keyword := range keywordSet {
+		for {
+			candidate := int(new(big.Int).Mod(benchcore.ScalarFromBytes("miaoscis2026:row", []byte(keyword), benchcore.IntBytes(row)), big.NewInt(int64(out.MatrixSize))).Int64())
+			if _, used := out.EncryptedRows[candidate]; !used {
+				out.KeywordRows[keyword] = candidate
+				out.EncryptedRows[candidate] = nil
+				break
+			}
+			row++
+		}
+	}
 	for i, input := range files {
 		if len(input.Blocks) != p.N {
 			return nil, fmt.Errorf("file %d: expected %d blocks", i, p.N)
@@ -83,29 +123,80 @@ func (p *Protocol) Store(files []struct {
 		}
 		out.Files[i] = f
 	}
+	for keyword, row := range out.KeywordRows {
+		plain := make([]byte, len(out.Files))
+		for i, file := range out.Files {
+			if containsAll(file.Keywords, []string{keyword}) {
+				plain[i] = 1
+			}
+		}
+		pad := rowPad(row, len(plain))
+		out.EncryptedRows[row] = xorBytes(plain, pad)
+	}
 	return out, nil
 }
 
-func (p *Protocol) Challenge(keywords []string, c int, files int) Challenge {
-	if c > p.N {
-		c = p.N
+func (p *Protocol) Trapdoor(stored *StoredData, keywords []string) (Trapdoor, error) {
+	if stored == nil {
+		return Trapdoor{}, fmt.Errorf("stored data is nil")
 	}
-	indices := make([]int, c)
-	for i := range indices {
-		indices[i] = i
+	tokens := make([]TrapdoorToken, len(keywords))
+	for i, keyword := range keywords {
+		row, ok := stored.KeywordRows[keyword]
+		if !ok {
+			return Trapdoor{}, fmt.Errorf("unknown keyword %q", keyword)
+		}
+		tokens[i] = TrapdoorToken{
+			Keyword: keyword,
+			Row:     row,
+			Pad:     rowPad(row, len(stored.Files)),
+		}
+	}
+	return Trapdoor{Tokens: tokens}, nil
+}
+
+func (p *Protocol) Challenge(keywords []string, c int, files int) Challenge {
+	coeffs := make([][]*big.Int, files)
+	for i := range coeffs {
+		coeffs[i] = make([]*big.Int, min(c, p.N))
+		for j := range coeffs[i] {
+			coeffs[i][j] = benchcore.ScalarFromBytes("miaoscis2026:challenge:coeff", []byte(fmt.Sprintf("%d", i)), benchcore.IntBytes(j))
+		}
+	}
+	return p.challengeWith(keywords, Trapdoor{}, []byte("default-k1"), []byte("default-k2"), c, files, coeffs)
+}
+
+func (p *Protocol) ChallengeWithTrapdoor(trap Trapdoor, c int, files int) Challenge {
+	keywords := make([]string, len(trap.Tokens))
+	for i, token := range trap.Tokens {
+		keywords[i] = token.Keyword
 	}
 	coeffs := make([][]*big.Int, files)
 	for i := range coeffs {
-		coeffs[i] = make([]*big.Int, c)
+		coeffs[i] = make([]*big.Int, min(c, p.N))
 		for j := range coeffs[i] {
-			coeffs[i][j] = benchcore.Scalar(fmt.Sprintf("miaoscis2026/chal/%d", i), j)
+			coeffs[i][j] = benchcore.ScalarFromBytes("miaoscis2026:challenge:coeff", []byte("trapdoor"), benchcore.IntBytes(i), benchcore.IntBytes(j))
 		}
 	}
-	return Challenge{Keywords: append([]string(nil), keywords...), Indices: indices, Coeffs: coeffs}
+	return p.challengeWith(keywords, trap, []byte("trapdoor-k1"), []byte("trapdoor-k2"), c, files, coeffs)
+}
+
+func (p *Protocol) challengeWith(keywords []string, trap Trapdoor, k1, k2 []byte, c int, files int, coeffs [][]*big.Int) Challenge {
+	if c > p.N {
+		c = p.N
+	}
+	return Challenge{
+		Keywords: append([]string(nil), keywords...),
+		Indices:  uniqueIndices("miaoscis2026:challenge:index", k1, c, p.N),
+		Coeffs:   coeffs,
+		Trapdoor: trap,
+		K1:       append([]byte(nil), k1...),
+		K2:       append([]byte(nil), k2...),
+	}
 }
 
 func (p *Protocol) Prove(stored *StoredData, chal Challenge) (*Proof, error) {
-	matched := matchingFiles(stored.Files, chal.Keywords)
+	matched := matchedByChallenge(stored, chal)
 	tAuth := benchcore.G1Zero()
 	mu := benchcore.Zero()
 	for _, fileIndex := range matched {
@@ -127,7 +218,7 @@ func (p *Protocol) Verify(stored *StoredData, chal Challenge, proof *Proof) bool
 	if stored == nil || proof == nil || len(chal.Coeffs) < len(stored.Files) {
 		return false
 	}
-	matched := matchingFiles(stored.Files, chal.Keywords)
+	matched := matchedByChallenge(stored, chal)
 	left := proof.TAuth
 	right := benchcore.G1Zero()
 	for _, fileIndex := range matched {
@@ -195,4 +286,86 @@ func challengeHash(keywords []string, r *bn256.G1) *big.Int {
 	}
 	parts = append(parts, r.Marshal())
 	return benchcore.ScalarFromBytes("miaoscis2026:h1", parts...)
+}
+
+func matchedByChallenge(stored *StoredData, chal Challenge) []int {
+	if stored == nil {
+		return nil
+	}
+	if len(chal.Trapdoor.Tokens) == 0 {
+		return matchingFiles(stored.Files, chal.Keywords)
+	}
+	mask := make([]byte, len(stored.Files))
+	for i := range mask {
+		mask[i] = 1
+	}
+	for _, token := range chal.Trapdoor.Tokens {
+		encrypted, ok := stored.EncryptedRows[token.Row]
+		if !ok || len(encrypted) != len(stored.Files) {
+			return nil
+		}
+		row := xorBytes(encrypted, token.Pad)
+		for i := range mask {
+			mask[i] &= row[i]
+		}
+	}
+	out := make([]int, 0)
+	for i, value := range mask {
+		if value == 1 {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+func rowPad(row, size int) []byte {
+	var out bytes.Buffer
+	for out.Len() < size {
+		chunk := benchcore.HashBytes("miaoscis2026:row-pad", benchcore.IntBytes(row), benchcore.IntBytes(out.Len()))
+		out.Write(chunk)
+	}
+	return out.Bytes()[:size]
+}
+
+func xorBytes(a, b []byte) []byte {
+	out := make([]byte, len(a))
+	for i := range a {
+		out[i] = a[i] ^ b[i%len(b)]
+	}
+	return out
+}
+
+func uniqueIndices(label string, seed []byte, c, n int) []int {
+	if c > n {
+		c = n
+	}
+	selected := make(map[int]struct{}, c)
+	for ctr := 0; len(selected) < c; ctr++ {
+		x := benchcore.ScalarFromBytes(label, seed, benchcore.IntBytes(ctr))
+		selected[int(new(big.Int).Mod(x, big.NewInt(int64(n))).Int64())] = struct{}{}
+	}
+	out := make([]int, 0, c)
+	for index := range selected {
+		out = append(out, index)
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j-1] > out[j]; j-- {
+			out[j-1], out[j] = out[j], out[j-1]
+		}
+	}
+	return out
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

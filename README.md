@@ -13,7 +13,7 @@ used in Section VI of the paper.
   - `refs/`: key reference papers and notes, including `PDP_Protocols.tex`.
 - `schemes/`
   - `foldaudit/`: Go implementation of the FoldAudit protocol core and tests.
-  - `yutc25/`, `zhangtpds23/`, `miaoscis2026/`, `xutifs26/`: reproduced protocol cores for the related schemes compared in the paper.
+  - `yutc25/`, `zhangtpds23/`, `miaoscis2026/`, `xutifs26/`: system-level reproductions of the related schemes compared in the paper, including multi-file audit paths where applicable.
   - `benchcore/`: shared benchmark and protocol utilities.
   - `relatedbench/`: correctness tests for the reproduced related protocols.
 - `experiments/`
@@ -77,24 +77,24 @@ Important files include:
 
 - `vi_overhead_all.csv`: all generated overhead records.
 - `average_overhead_summary.csv`: average audit overhead by scheme.
-- `audit_vs_m.{pdf,svg,png}`
-- `store_vs_file_size.{pdf,svg,png}`
-- `proofgen_vs_s.{pdf,svg,png}`
-- `verify_vs_s.{pdf,svg,png}`
-- `baseline_phase_overhead.{pdf,svg,png}`
-- `mean_audit_overhead.{pdf,svg,png}`
+- `audit_vs_m.pdf`
+- `store_vs_file_size.pdf`
+- `proofgen_vs_s.pdf`
+- `verify_vs_s.pdf`
+- `baseline_phase_overhead.pdf`
+- `mean_audit_overhead.pdf`
 
-To refresh the figures embedded in the paper, copy the generated PDF/PNG files:
+To refresh the figures embedded in the paper, copy the generated PDF files:
 
 ```bash
-cp experiments/out/vi_evaluation/*.pdf experiments/out/vi_evaluation/*.png paper/figures/vi_evaluation/
+cp experiments/out/vi_evaluation/*.pdf paper/figures/vi_evaluation/
 ```
 
 ## Notes
 
-- The experiment script estimates protocol-level overhead from reproduced
-  operation counts and locally calibrated `bn256` primitive costs. It avoids
-  repeatedly materializing large encoded files while preserving the workload
-  scale described in Section VI.
+- The experiment script estimates protocol-level overhead from the reproduced
+  system implementations and locally calibrated `bn256` primitive costs. It
+  avoids repeatedly materializing large encoded files while preserving the
+  workload scale described in Section VI.
 - `paper/refs/PDP_Protocols.tex` is used as the implementation reference for
   the related protocols in `schemes/`.
