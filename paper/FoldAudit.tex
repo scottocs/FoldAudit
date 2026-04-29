@@ -336,11 +336,11 @@ For clarity and reference, we summarize the primary mathematical symbols, crypto
 \textbf{Symbol} & \textbf{Description} \\
 \hline
 $\lambda$ & Security parameter. \\
-$p$ & Prime order of the finite field $\mathbb{F}_p$ and bilinear groups $(\mathbb{G}_1, \mathbb{G}_2, \mathbb{G}_T)$. \\
+$p$ & Prime order of the finite field $\FF_p$ and bilinear groups $(\GG_1, \GG_2, \GG_T)$. \\
 $[m]$ & Index set $\{1, 2, \dots, m\}$ for the audited file batch. \\
-$\mathbb{F}_p^{<d}[X]$ & Vector space of univariate polynomials over $\mathbb{F}_p$ with degree strictly less than $d$. \\
-$g, h$ & Public generators of $\mathbb{G}_1$ and $\mathbb{G}_2$, respectively. \\
-$e(\cdot, \cdot)$ & Efficiently computable, non-degenerate bilinear map $e: \mathbb{G}_1 \times \mathbb{G}_2 \to \mathbb{G}_T$. \\
+$\FF_p^{<d}[X]$ & Vector space of univariate polynomials over $\FF_p$ with degree strictly less than $d$. \\
+$g, h$ & Public generators of $\GG_1$ and $\GG_2$, respectively. \\
+$e(\cdot, \cdot)$ & Efficiently computable, non-degenerate bilinear map $e: \GG_1 \times \GG_2 \to \GG_T$. \\
 $\tau$ & Secret trapdoor used for Structured Reference String (SRS) generation (held by DO). \\
 SRS & Public parameters $(g, g^\tau, \dots, g^{\tau^{s-1}}, h, h^\tau)$ supporting polynomial degrees $< s$. \\
 $H_1$ & Collision-resistant hash function for Merkle tree construction. \\
@@ -349,7 +349,7 @@ $m, n, s, c$ & Number of files, chunks per file, sectors per chunk, and challeng
 $i, j, k$ & Indices for files ($i \in [m]$), chunks ($j \in [n]$), and sectors ($0 \leq k < s$). \\
 $m_{i,j,k}$ & $k$-th sector value of chunk $j$ in file $i$. \\
 $f_{i,j}(X)$ & Polynomial encoding of chunk $j$ in file $i$: $f_{i,j}(X) = \sum_{k=0}^{s-1} m_{i,j,k} X^k$. \\
-$\sigma_{i,j}$ & KZG homomorphic tag for $f_{i,j}(X)$: $\sigma_{i,j} = g^{f_{i,j}(\tau)} \in \mathbb{G}_1$. \\
+$\sigma_{i,j}$ & KZG homomorphic tag for $f_{i,j}(X)$: $\sigma_{i,j} = g^{f_{i,j}(\tau)} \in \GG_1$. \\
 $L_{i,j}$ & Merkle leaf for tag authentication: $L_{i,j}=H_1(\mathsf{leaf}\|\mathsf{fid}_i\|j\|\mathsf{enc}(\sigma_{i,j}))$. \\
 $\Gamma_i$ & Root hash of the Merkle tree for file $i$. \\
 $J$ & Challenged chunk index set, $J \subseteq [n]$ with $|J| = c$. \\
@@ -365,7 +365,7 @@ $w_i(X)$ & Per-file quotient polynomial: $w_i(X) = (f_i(X) - y_i)/(X - r_i)$. \\
 $C_{w_i}$ & Commitment to the per-file quotient witness: $C_{w_i}=g^{w_i(\tau)}$. \\
 $\rho$ & Fiat-Shamir derived folding scalar for batch quotient verification (sampled after $\{C_{w_i}\}$ and $\Pi_R$ are fixed). \\
 $L,R$ & Folded verification accumulators checked by $e(L,h)=e(R,h^\tau)$. \\
-$\text{chal}$ & Challenge tuple $(J, \{v_{i,j}\}_{i\in[m],j \in J}, \{r_i\}_{i=1}^m, \text{nonce})$. \\
+$\mathsf{chal}$ & Challenge tuple $(J, \{v_{i,j}\}_{i\in[m],j \in J}, \{r_i\}_{i=1}^m, \mathsf{nonce})$. \\
 $\pi$ & Complete audit proof $\left(\left\{\mathsf{Auth}_i,\tilde{y}_i,R_i,C_{w_i},b_i,\{\sigma_{i,j}\}_{j\in J}\right\}_{i=1}^m,\Pi_R\right)$. \\
 \hline
 \end{tabular}

@@ -269,12 +269,12 @@ def plot_proof_communication(df: pd.DataFrame) -> None:
     ax.set_ylabel("Audit-proof comm. (KiB, log)")
     ax.set_xticks([5, 10, 15, 20, 25, 30])
     ax.legend(
-        ncol=3,
+        ncol=5,
         frameon=False,
-        fontsize=6.5,
+        fontsize=6.2,
         handlelength=0.9,
         handletextpad=0.25,
-        columnspacing=0.55,
+        columnspacing=0.45,
         loc="lower center",
         bbox_to_anchor=(0.5, 1.01),
         borderaxespad=0.0,

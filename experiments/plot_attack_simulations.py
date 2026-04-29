@@ -92,7 +92,7 @@ def plot_sampling_detection() -> None:
     ax.set_ylabel("Detection probability")
     ax.set_ylim(0.0, 1.03)
     ax.set_xlim(0, 800)
-    ax.legend(ncol=2, frameon=False, loc="lower right")
+    ax.legend(ncol=2, frameon=False, loc="lower center", bbox_to_anchor=(0.43, 0.02))
     fig.tight_layout()
     save(fig, "sampling_detection_probability")
 

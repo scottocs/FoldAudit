@@ -229,10 +229,9 @@ def plot_average_bar(summary: pd.DataFrame) -> None:
         bar.set_linewidth(0.55)
     linear_y(ax)
     ax.set_ylabel("Mean audit time (s)")
-    ax.tick_params(axis="x", rotation=24)
+    ax.tick_params(axis="x", rotation=0)
     for tick in ax.get_xticklabels():
-        tick.set_ha("right")
-    shift_xticklabels_right(ax)
+        tick.set_ha("center")
     fig.tight_layout()
     save(fig, "mean_audit_overhead")
 
