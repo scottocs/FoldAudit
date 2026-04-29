@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Render the communication-overhead figures used as Fig. 4 in FoldAudit.tex.
+"""Render the aggregate VI figures used in FoldAudit.tex.
 
-The values are computed from Table IV's communication formulas, not from runtime
-measurements.  The constants match the implementation profile used in Section VI:
+The communication values are computed from Table IV's formulas, not from runtime
+measurements. The constants match the implementation profile used in Section VI:
 one field element and one SHA-256 digest are 32 bytes, and one serialized bn256
 G1 element is 64 bytes.
 """
@@ -39,7 +39,7 @@ PALETTE = {
     "ZhangTPDS23": "#F58518",
     "MiaoSCIS2026": "#B279A2",
     "XuTIFS26": "#54A24B",
-    "FoldAudit": "#111111",
+    "FoldAudit": "#6B7280",
 }
 MARKERS = {
     "YuTC25": "o",
@@ -184,6 +184,41 @@ def build_communication_rows() -> pd.DataFrame:
     return df
 
 
+def plot_phase_bars() -> None:
+    data = pd.read_csv(OUT / "baseline.csv")
+    data = data[data.phase.isin(["Store", "ProofGen", "Verify"])].copy()
+    data["scheme"] = pd.Categorical(data["scheme"], categories=SCHEMES, ordered=True)
+
+    fig, ax = plt.subplots(figsize=FIGSIZE)
+    width = 0.24
+    phases = ["Store", "ProofGen", "Verify"]
+    x_positions = list(range(len(SCHEMES)))
+    for offset, phase, color in zip([-width, 0, width], phases, ["#9ECAE1", "#74C476", "#FD8D3C"]):
+        part = data[data.phase == phase].sort_values("scheme")
+        bars = ax.bar(
+            [x + offset for x in x_positions],
+            part["seconds"],
+            width=width,
+            label=phase,
+            color=color,
+            edgecolor="#222222",
+            linewidth=0.45,
+        )
+        if phase == "Verify":
+            for bar in bars:
+                bar.set_hatch("//")
+
+    log_y(ax)
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels([DISPLAY[s] for s in SCHEMES], rotation=0, ha="center")
+    ax.tick_params(axis="x", labelsize=7.5)
+    shift_xticklabels_right(ax)
+    ax.set_ylabel("Time (s, log)")
+    ax.legend(ncol=3, frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.02), borderaxespad=0.0)
+    fig.tight_layout(rect=(0, 0, 1, 0.90))
+    save_fixed_canvas(fig, "baseline_phase_overhead")
+
+
 def plot_store_communication(df: pd.DataFrame) -> None:
     data = df[(df["scenario"] == "vary_B") & (df["metric"] == "Store")].copy()
     fig, ax = plt.subplots(figsize=FIGSIZE)
@@ -202,12 +237,12 @@ def plot_store_communication(df: pd.DataFrame) -> None:
     ax.set_ylabel("Store comm. (MiB, log)")
     ax.set_xticks([10, 20, 40, 60, 80, 100])
     ax.legend(
-        ncol=3,
+        ncol=5,
         frameon=False,
-        fontsize=6.5,
+        fontsize=6.2,
         handlelength=0.9,
         handletextpad=0.25,
-        columnspacing=0.55,
+        columnspacing=0.45,
         loc="lower center",
         bbox_to_anchor=(0.5, 1.01),
         borderaxespad=0.0,
@@ -251,9 +286,10 @@ def plot_proof_communication(df: pd.DataFrame) -> None:
 def main() -> None:
     setup_style()
     df = build_communication_rows()
+    plot_phase_bars()
     plot_store_communication(df)
     plot_proof_communication(df)
-    print("Rendered store_communication_vs_file_size.pdf and proof_communication_vs_m.pdf")
+    print("Rendered baseline_phase_overhead.pdf, store_communication_vs_file_size.pdf, and proof_communication_vs_m.pdf")
 
 
 if __name__ == "__main__":

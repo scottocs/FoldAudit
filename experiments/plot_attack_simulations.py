@@ -121,7 +121,7 @@ def plot_folding_cancellation() -> None:
     bound = (m_values - 1) / p
 
     fig, ax = plt.subplots(figsize=(3.55, 2.55))
-    ax.plot(m_values, empirical, marker="o", markersize=3.5, color="#111111", label="Toy-field simulation")
+    ax.plot(m_values, empirical, marker="o", markersize=3.5, color="#6B7280", label="Toy-field simulation")
     ax.plot(m_values, bound, marker="s", markersize=3.2, color="#F58518", linestyle="--", label=r"Bound $(m-1)/p$")
 
     clean_axes(ax)
@@ -297,7 +297,7 @@ def plot_data_leakage_rank() -> None:
     fig, ax = plt.subplots(figsize=(3.55, 2.55))
     ax.plot(x, exposed, color="#4C78A8", label="Exposed")
     ax.plot(x, reused, color="#F58518", linestyle="--", label="Reused mask")
-    ax.plot(x, fresh, color="#111111", linestyle=":", label="Fresh mask")
+    ax.plot(x, fresh, color="#6B7280", linestyle=":", label="Fresh mask")
     ax.axhline(1.0, color="#777777", linewidth=0.8, linestyle=":")
     ax.text(18, 0.945, "full rank", fontsize=7.3, color="#555555")
 

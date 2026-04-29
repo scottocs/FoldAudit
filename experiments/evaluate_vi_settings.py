@@ -43,7 +43,7 @@ PALETTE = {
     "ZhangTPDS23": "#F58518",
     "MiaoSCIS2026": "#B279A2",
     "XuTIFS26": "#54A24B",
-    "FoldAudit": "#111111",
+    "FoldAudit": "#6B7280",
 }
 MARKERS = {
     "YuTC25": "o",

@@ -1,0 +1,12 @@
+paper/*
+!paper/FoldAudit.tex
+!paper/refs/
+!paper/refs/**
+!paper/figures/
+!paper/figures/**
+.vscode/
+.venv/
+experiments/__pycache__/
+__pycache__/
+*.pyc
+experiments/out/

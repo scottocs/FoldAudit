@@ -46,7 +46,7 @@ PALETTE = {
     "ZhangTPDS23": "#F58518",
     "MiaoSCIS2026": "#B279A2",
     "XuTIFS26": "#54A24B",
-    "FoldAudit (Ours)": "#111111",
+    "FoldAudit (Ours)": "#6B7280",
 }
 
 HATCHES = {
