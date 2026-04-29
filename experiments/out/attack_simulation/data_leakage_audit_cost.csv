@@ -1,0 +1,6 @@
+scheme,trials,m,n,s,c,audit_mean_ms,ok
+YuTC25,20,4,64,8,8,9.03806665,true
+ZhangTPDS23,20,4,64,8,8,15.91902085,true
+MiaoSCIS2026,20,4,64,8,8,9.38547930,true
+XuTIFS26,20,4,64,8,8,7.43765015,true
+FoldAudit,20,4,64,8,8,12.62096050,true

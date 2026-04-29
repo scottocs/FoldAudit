@@ -38,6 +38,66 @@ func TestChallengeWithTrapdoorUsesFreshRandomKeys(t *testing.T) {
 	assertUniqueInRange(t, chalB.Indices, c, n)
 }
 
+func TestTrapdoorMatchingUsesKeywordUnion(t *testing.T) {
+	n, c := 8, 3
+	p := NewProtocol(n)
+	files := []struct {
+		FID      string
+		Keywords []string
+		Blocks   []*big.Int
+	}{
+		{FID: "f0", Keywords: []string{"audit", "cloud"}, Blocks: testScalars(n, "miao/union/f0")},
+		{FID: "f1", Keywords: []string{"audit", "chain"}, Blocks: testScalars(n, "miao/union/f1")},
+		{FID: "f2", Keywords: []string{"cloud"}, Blocks: testScalars(n, "miao/union/f2")},
+	}
+	stored, err := p.Store(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trap, err := p.Trapdoor(stored, []string{"audit", "cloud"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	chal := p.ChallengeWithTrapdoor(trap, c, len(files))
+	matched := matchedByChallenge(stored, chal)
+	if len(matched) != 3 || matched[0] != 0 || matched[1] != 1 || matched[2] != 2 {
+		t.Fatalf("expected union-matched files [0 1 2], got %v", matched)
+	}
+}
+
+func TestProveDoesNotUseSecretExponent(t *testing.T) {
+	n, c := 8, 3
+	p := NewProtocol(n)
+	files := []struct {
+		FID      string
+		Keywords []string
+		Blocks   []*big.Int
+	}{
+		{FID: "f0", Keywords: []string{"audit", "cloud"}, Blocks: testScalars(n, "miao/no-secret/f0")},
+		{FID: "f1", Keywords: []string{"audit", "chain"}, Blocks: testScalars(n, "miao/no-secret/f1")},
+	}
+	stored, err := p.Store(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trap, err := p.Trapdoor(stored, []string{"audit"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chal := p.ChallengeWithTrapdoor(trap, c, len(files))
+
+	p.x = nil
+
+	proof, err := p.Prove(stored, chal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Verify(stored, chal, proof) {
+		t.Fatal("honest proof generated without secret exponent was rejected")
+	}
+}
+
 func testScalars(n int, label string) []*big.Int {
 	out := make([]*big.Int, n)
 	for i := range out {

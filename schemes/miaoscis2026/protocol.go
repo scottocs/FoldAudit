@@ -251,7 +251,7 @@ func (p *Protocol) keywordProduct(keywords []string) *bn256.G1 {
 func matchingFiles(files []File, keywords []string) []int {
 	var out []int
 	for i, file := range files {
-		if containsAll(file.Keywords, keywords) {
+		if containsAny(file.Keywords, keywords) {
 			out = append(out, i)
 		}
 	}
@@ -269,6 +269,19 @@ func containsAll(have []string, want []string) bool {
 		}
 	}
 	return true
+}
+
+func containsAny(have []string, want []string) bool {
+	set := make(map[string]struct{}, len(have))
+	for _, value := range have {
+		set[value] = struct{}{}
+	}
+	for _, value := range want {
+		if _, ok := set[value]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func h1Keyword(keyword string) *bn256.G1 {
@@ -308,9 +321,6 @@ func matchedByChallenge(stored *StoredData, chal Challenge) []int {
 		return matchingFiles(stored.Files, chal.Keywords)
 	}
 	mask := make([]byte, len(stored.Files))
-	for i := range mask {
-		mask[i] = 1
-	}
 	for _, token := range chal.Trapdoor.Tokens {
 		encrypted, ok := stored.EncryptedRows[token.Row]
 		if !ok || len(encrypted) != len(stored.Files) {
@@ -318,7 +328,7 @@ func matchedByChallenge(stored *StoredData, chal Challenge) []int {
 		}
 		row := xorBytes(encrypted, token.Pad)
 		for i := range mask {
-			mask[i] &= row[i]
+			mask[i] |= row[i]
 		}
 	}
 	out := make([]int, 0)

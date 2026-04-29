@@ -1,7 +1,9 @@
 package yutc25
 
 import (
+	"crypto/rand"
 	"fmt"
+	"io"
 	"math/big"
 
 	bn256 "github.com/ethereum/go-ethereum/crypto/bn256/cloudflare"
@@ -13,6 +15,7 @@ type Protocol struct {
 	N, S int
 	psi  *big.Int
 	SRS  []*bn256.G1
+	rand io.Reader
 }
 
 type StoredData struct {
@@ -57,6 +60,13 @@ type BatchProof struct {
 }
 
 func NewProtocol(n, s int) *Protocol {
+	return NewProtocolWithReader(n, s, rand.Reader)
+}
+
+func NewProtocolWithReader(n, s int, reader io.Reader) *Protocol {
+	if reader == nil {
+		reader = rand.Reader
+	}
 	psi := benchcore.Scalar("yutc25/psi", 0)
 	srs := make([]*bn256.G1, s+1)
 	power := benchcore.One()
@@ -64,7 +74,7 @@ func NewProtocol(n, s int) *Protocol {
 		srs[i] = benchcore.G1Base(power)
 		power = benchcore.Mul(power, psi)
 	}
-	return &Protocol{N: n, S: s, psi: psi, SRS: srs}
+	return &Protocol{N: n, S: s, psi: psi, SRS: srs, rand: reader}
 }
 
 func (p *Protocol) Store(blocks [][]*big.Int) (*StoredData, error) {
@@ -145,7 +155,10 @@ func (p *Protocol) BatchChallenge(files, c int) BatchChallenge {
 }
 
 func (p *Protocol) Prove(stored *StoredData, chal Challenge) (*Proof, error) {
-	beta := benchcore.Scalar("yutc25/privacy/beta", len(chal.Indices))
+	beta, err := benchcore.RandomScalar(p.rand, true)
+	if err != nil {
+		return nil, fmt.Errorf("sample privacy mask beta: %w", err)
+	}
 	B := benchcore.G1Base(beta)
 	eta := benchcore.ScalarFromBytes("yutc25/eta", B.Marshal())
 

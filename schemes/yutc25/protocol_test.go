@@ -28,6 +28,51 @@ func TestProveDoesNotUseTrapdoor(t *testing.T) {
 	}
 }
 
+func TestSingleProveDoesNotUseTrapdoor(t *testing.T) {
+	n, s, c := 8, 4, 3
+	p := NewProtocol(n, s)
+	stored, err := p.Store(testDataset(1, n, s, "yu/single/no-trapdoor")[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	chal := p.Challenge(c)
+
+	p.psi = nil
+
+	proof, err := p.Prove(stored, chal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Verify(stored.Root, chal, proof) {
+		t.Fatal("honest single-file proof generated without trapdoor was rejected")
+	}
+}
+
+func TestPrivacyMaskIsFreshPerProof(t *testing.T) {
+	n, s, c := 8, 4, 3
+	p := NewProtocolWithReader(n, s, bytes.NewReader(twoNonZeroScalars()))
+	stored, err := p.Store(testDataset(1, n, s, "yu/fresh-mask")[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	chal := p.ChallengeFromKeys([]byte("fixed-k1"), []byte("fixed-k2"), c)
+
+	proofA, err := p.Prove(stored, chal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proofB, err := p.Prove(stored, chal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Verify(stored.Root, chal, proofA) || !p.Verify(stored.Root, chal, proofB) {
+		t.Fatal("freshly masked proofs failed verification")
+	}
+	if benchcore.G1Eq(proofA.B, proofB.B) {
+		t.Fatal("Prove reused the YuTC25 privacy mask")
+	}
+}
+
 func TestChallengeUsesFreshRandomKeys(t *testing.T) {
 	p := NewProtocol(32, 4)
 	chalA := p.Challenge(8)
@@ -51,6 +96,13 @@ func TestBatchChallengeUsesFreshRandomKeysPerFile(t *testing.T) {
 			t.Fatal("BatchChallenge reused challenge keys across files")
 		}
 	}
+}
+
+func twoNonZeroScalars() []byte {
+	out := make([]byte, 64)
+	out[31] = 1
+	out[63] = 2
+	return out
 }
 
 func testDataset(m, n, s int, label string) [][][]*big.Int {
