@@ -1071,20 +1071,8 @@ The tables follow the system-level reproductions under \texttt{schemes/}. Yu et 
 
 All experiments were conducted on a local Apple M4 machine with 10 logical CPU cores and 16~GB of memory, running macOS~26.3 (Build~25D125). The host hardware reports the \texttt{arm64} architecture, while the Go toolchain used for the benchmark binary reports \texttt{darwin/amd64}. The implementation was compiled and executed with Go~1.25.4. Pairing and group operations were instantiated with the \texttt{bn256} implementation from \texttt{go-ethereum}. Each compared protocol was reproduced under the same Go framework with its system-level audit path: storage/tag generation, challenge derivation, proof generation, and verification are implemented for multi-file audit tests. The plotted costs are measured by executing these protocol routines directly on deterministically generated file contents, rather than by multiplying abstract operation counts by single-operation latencies.
 
-For cross-checking only, Table~\ref{tab:primitive_latency} reports the
-single-operation latencies measured on the same backend. The finite-field row
-uses the same meaning as Table~\ref{tab:computation}: one modular addition or
-multiplication over \(\FF_p\) used inside polynomial routines, excluding
-inversion, exponentiation, scalar decoding, hashing, and group arithmetic.
-These values help
-interpret why pairing-heavy or scalar-multiplication-heavy schemes behave
-differently, but they are not used to generate the experimental curves in
-Section~VI; all plotted data are obtained by executing the protocol source code.
-The \textsf{HashToG1} entry corresponds to the local implementation that hashes
-the transcript to a scalar and then performs one \(\GG_1\) base scalar
-multiplication.
 
-\begin{table}[t]
+\begin{table}[h]
 \centering
 \caption{Single-Operation Latency for Cross-Checking Only}
 \label{tab:primitive_latency}
@@ -1103,14 +1091,38 @@ Pairing check term (\(\CompPair\)) & 1153.475 \\
 \end{tabular}
 \end{table}
 
+
+For cross-checking only, Table~\ref{tab:primitive_latency} reports the
+single-operation latencies measured on the same backend. The finite-field row
+uses the same meaning as Table~\ref{tab:computation}: one modular addition or
+multiplication over \(\FF_p\) used inside polynomial routines, excluding
+inversion, exponentiation, scalar decoding, hashing, and group arithmetic.
+These values help
+interpret why pairing-heavy or scalar-multiplication-heavy schemes behave
+differently, but they are not used to generate the experimental curves in
+Section~VI; all plotted data are obtained by executing the protocol source code.
+The \textsf{HashToG1} entry corresponds to the local implementation that hashes
+the transcript to a scalar and then performs one \(\GG_1\) base scalar
+multiplication.
+
+
+
 \begin{figure*}[!t]
 \centering
-\subfloat[Data-leakage attack cost; labels above bars give the required audit rounds under fixed \(m=4\), \(n=64\), \(s=8\), and \(c=8\).]{
-\includegraphics[width=0.44\textwidth]{figures/attack_simulation/data_leakage_attack_cost.pdf}
+\subfloat[Leakage rank.]{
+\includegraphics[width=0.235\textwidth]{figures/attack_simulation/data_leakage_rank.pdf}
+\label{fig:data_leakage_rank}}
+\hfill
+\subfloat[Leakage cost.]{
+\includegraphics[width=0.235\textwidth]{figures/attack_simulation/data_leakage_attack_cost.pdf}
 \label{fig:data_leakage_attack_cost}}
 \hfill
-\subfloat[Cancellation-attempt time; \textit{Res.} means that the forged proof is rejected, whereas \textit{Vuln.} means that it is accepted.]{
-\includegraphics[width=0.44\textwidth]{figures/attack_simulation/cancellation_attack_cost.pdf}
+\subfloat[Cancellation instance.]{
+\includegraphics[width=0.235\textwidth]{figures/attack_simulation/cancellation_attack_real.pdf}
+\label{fig:cancellation_attack_real}}
+\hfill
+\subfloat[Cancellation cost.]{
+\includegraphics[width=0.235\textwidth]{figures/attack_simulation/cancellation_attack_cost.pdf}
 \label{fig:cancellation_attack_cost}}
 \caption{Attack-related simulations for repeated-audit data leakage and folded batch verification under the same attack-scale setting.}
 \label{fig:attack_bound_illustrations}
@@ -1120,20 +1132,20 @@ Fig.~\ref{fig:sampling_detection_probability}, placed near Remark~\ref{rem:param
 
 \begin{figure*}[!t]
 \centering
-\subfloat[Storage-generation overhead under increasing file size $B$; fixed $m=5$, $s=20$, and $c=690$.]{
-\includegraphics[width=0.44\textwidth]{figures/vi_evaluation/store_vs_file_size.pdf}
+\subfloat[Store vs. file size.]{
+\includegraphics[width=0.235\textwidth]{figures/vi_evaluation/store_vs_file_size.pdf}
 \label{fig:store_vs_file_size}}
 \hfill
-\subfloat[Proof-generation overhead under increasing sector number $s$; fixed $m=5$, $B=10$~MB, and $c=690$.]{
-\includegraphics[width=0.44\textwidth]{figures/vi_evaluation/proofgen_vs_s.pdf}
+\subfloat[ProofGen vs. sectors.]{
+\includegraphics[width=0.235\textwidth]{figures/vi_evaluation/proofgen_vs_s.pdf}
 \label{fig:proofgen_vs_s}}
-
-\subfloat[Verification overhead under increasing sector number $s$; fixed $m=5$, $B=10$~MB, and $c=690$.]{
-\includegraphics[width=0.44\textwidth]{figures/vi_evaluation/verify_vs_s.pdf}
+\hfill
+\subfloat[Verify vs. sectors.]{
+\includegraphics[width=0.235\textwidth]{figures/vi_evaluation/verify_vs_s.pdf}
 \label{fig:verify_vs_s}}
 \hfill
-\subfloat[Audit overhead under increasing batch size $m$; fixed $B=10$~MB, $s=20$, and $c=690$.]{
-\includegraphics[width=0.44\textwidth]{figures/vi_evaluation/audit_vs_m.pdf}
+\subfloat[Audit vs. batch size.]{
+\includegraphics[width=0.235\textwidth]{figures/vi_evaluation/audit_vs_m.pdf}
 \label{fig:audit_vs_m}}
 \caption{Runtime trends under the Section~VI parameter setting.}
 \label{fig:vi_runtime_trends}
@@ -1141,15 +1153,23 @@ Fig.~\ref{fig:sampling_detection_probability}, placed near Remark~\ref{rem:param
 
 \begin{figure*}[!t]
 \centering
-\subfloat[Store, proof generation, and verification overhead at the baseline setting $m=5$, $B=10$~MB, $s=20$, and $c=690$.]{
-\includegraphics[width=0.44\textwidth]{figures/vi_evaluation/baseline_phase_overhead.pdf}
+\subfloat[Baseline phases.]{
+\includegraphics[width=0.235\textwidth]{figures/vi_evaluation/baseline_phase_overhead.pdf}
 \label{fig:baseline_phase_overhead}}
 \hfill
-\subfloat[Audit-proof communication vs. batch size $m$.]{
-\includegraphics[width=0.44\textwidth]{figures/vi_evaluation/proof_communication_vs_m.pdf}
+\subfloat[Mean audit overhead.]{
+\includegraphics[width=0.235\textwidth]{figures/vi_evaluation/mean_audit_overhead.pdf}
+\label{fig:mean_audit_overhead}}
+\hfill
+\subfloat[Storage communication.]{
+\includegraphics[width=0.235\textwidth]{figures/vi_evaluation/store_communication_vs_file_size.pdf}
+\label{fig:store_communication_vs_file_size}}
+\hfill
+\subfloat[Proof communication.]{
+\includegraphics[width=0.235\textwidth]{figures/vi_evaluation/proof_communication_vs_m.pdf}
 \label{fig:proof_communication_vs_m}}
 \vspace{-0.6em}
-\caption{Baseline phase-level runtime and audit-proof communication overhead. Fig.~4(b) fixes \(B=10\)~MB, \(s=20\), and \(c=690\). Communication is computed from Table~\ref{tab:communication} using \(|p|=|h|=256\) bits and \(|\GG_1|=512\) bits, matching the implementation's 32-byte field/hash values and 64-byte serialized \(\GG_1\) elements.}
+\caption{Baseline runtime, mean audit overhead, and communication overhead. Fig.~4(b) fixes \(m=5\), \(B=10\)~MB, \(s=20\), and \(c=690\); Fig.~4(c) fixes \(m=5\), \(s=20\), and \(c=690\); Fig.~4(d) fixes \(B=10\)~MB, \(s=20\), and \(c=690\). Communication is computed from Table~\ref{tab:communication} using \(|p|=|h|=256\) bits and \(|\GG_1|=512\) bits, matching the implementation's 32-byte field/hash values and 64-byte serialized \(\GG_1\) elements.}
 \label{fig:vi_aggregate_overhead}
 \end{figure*}
 
@@ -1314,6 +1334,7 @@ Y.~Xu, H.~Cheng, J.~Zheng, X.~Zhang, and H.~Wang,
 \item \textbf{$\ProofGen$ Algorithm.}  After locating the matched set of \(m\) files, the server computes \(T=\prod_{i\in R}\prod_{j\in Q}\sigma_{i,j}^{e_{i,j}}\), which costs \(mc\CompExp\), and generates the privacy element \(R_g=g^r\), which costs one more exponentiation. The aggregate data value \(\mu\) requires finite-field work. Thus the counted proof-generation group computation is \((mc+1)\CompExp\), with the finite-field term reported in Table~\ref{tab:computation}.
 \item \textbf{$\Verify$ Algorithm.}  The verifier exponentiates one match index \(\Omega_i\) for each matched file. For each challenged block, it derives the \(H_3(au_{i,j})\) term through hash-to-group and exponentiates that term by the audit coefficient. It also computes \(u^{\mu_1}\) and \(R_g^{h_1(T_w,R_g)}\). These operations contribute \((m+2mc+2)\CompExp\). The final verification equation has two pairings, so the verifier computation is \((2mc+m+2)\CompExp+2\CompPair\).
 \end{itemize}
+
 
 \noindent\textit{3.2) Communication Complexity of Miao et al.~\cite{MiaoSCIS2026}}
 \begin{itemize}
