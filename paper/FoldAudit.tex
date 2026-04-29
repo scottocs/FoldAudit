@@ -1107,26 +1107,18 @@ multiplication.
 
 
 
-\begin{figure*}[!t]
+\begin{figure}[h]
 \centering
-\subfloat[Leakage rank.]{
-\includegraphics[width=0.235\textwidth]{figures/attack_simulation/data_leakage_rank.pdf}
-\label{fig:data_leakage_rank}}
-\hfill
 \subfloat[Leakage cost.]{
-\includegraphics[width=0.235\textwidth]{figures/attack_simulation/data_leakage_attack_cost.pdf}
+\includegraphics[width=0.22\textwidth]{figures/attack_simulation/data_leakage_attack_cost.pdf}
 \label{fig:data_leakage_attack_cost}}
 \hfill
-\subfloat[Cancellation instance.]{
-\includegraphics[width=0.235\textwidth]{figures/attack_simulation/cancellation_attack_real.pdf}
-\label{fig:cancellation_attack_real}}
-\hfill
 \subfloat[Cancellation cost.]{
-\includegraphics[width=0.235\textwidth]{figures/attack_simulation/cancellation_attack_cost.pdf}
+\includegraphics[width=0.22\textwidth]{figures/attack_simulation/cancellation_attack_cost.pdf}
 \label{fig:cancellation_attack_cost}}
 \caption{Attack-related simulations for repeated-audit data leakage and folded batch verification under the same attack-scale setting.}
 \label{fig:attack_bound_illustrations}
-\end{figure*}
+\end{figure}
 
 Fig.~\ref{fig:sampling_detection_probability}, placed near Remark~\ref{rem:parameter_selection}, visualizes the sampling behavior used for the challenge-size choice. Fig.~\ref{fig:attack_bound_illustrations} then reports source-level attack simulations underlying Table~\ref{tab:feature_comparison_simplified}. Fig.~\ref{fig:data_leakage_attack_cost} converts repeated-audit recovery rounds into attack cost using measured per-round audit time for schemes whose transcripts expose reusable plaintext linear equations; the round labels indicate how many audit transcripts are needed to obtain enough independent equations, not an attack success probability. Thus, tens or hundreds of rounds do not mean that the attack is unlikely to succeed, but rather that the leakage becomes practical whenever an adversary can observe repeated audits over the same outsourced data. The bar for Yu et al.~\cite{YuTC25} is partial: after fresh randomization, the constant coefficient remains masked, but the disclosed quotient still reveals the challenged aggregate polynomial's nonconstant coefficients. Xu et al.~\cite{XuTIFS26} and Zhang et al.~\cite{ZhangTPDS23} expose unmasked aggregate equations whose ranks accumulate toward full data recovery. Miao et al.~\cite{MiaoSCIS2026} and FoldAudit are shown as masked because their fresh masking prevents this direct linear-recovery cost model. Fig.~\ref{fig:cancellation_attack_cost} measures cancellation-forgery attempts under fixed \(m=4\), \(n=64\), \(s=8\), and \(c=8\), splitting forged-proof construction and verification time; green ``Res.'' markers denote rejected forged proofs, while red ``Vuln.'' markers denote accepted forged proofs. The aggregate checks in Zhang et al.~\cite{ZhangTPDS23}, Miao et al.~\cite{MiaoSCIS2026}, and Xu et al.~\cite{XuTIFS26} accept the constructed cancellation attempts, whereas Yu et al.~\cite{YuTC25} reject them through independent per-file verification and FoldAudit rejects them because \(\rho\) is derived from the Fiat-Shamir transcript after the proof statement is fixed.
 
@@ -1334,7 +1326,6 @@ Y.~Xu, H.~Cheng, J.~Zheng, X.~Zhang, and H.~Wang,
 \item \textbf{$\ProofGen$ Algorithm.}  After locating the matched set of \(m\) files, the server computes \(T=\prod_{i\in R}\prod_{j\in Q}\sigma_{i,j}^{e_{i,j}}\), which costs \(mc\CompExp\), and generates the privacy element \(R_g=g^r\), which costs one more exponentiation. The aggregate data value \(\mu\) requires finite-field work. Thus the counted proof-generation group computation is \((mc+1)\CompExp\), with the finite-field term reported in Table~\ref{tab:computation}.
 \item \textbf{$\Verify$ Algorithm.}  The verifier exponentiates one match index \(\Omega_i\) for each matched file. For each challenged block, it derives the \(H_3(au_{i,j})\) term through hash-to-group and exponentiates that term by the audit coefficient. It also computes \(u^{\mu_1}\) and \(R_g^{h_1(T_w,R_g)}\). These operations contribute \((m+2mc+2)\CompExp\). The final verification equation has two pairings, so the verifier computation is \((2mc+m+2)\CompExp+2\CompPair\).
 \end{itemize}
-
 
 \noindent\textit{3.2) Communication Complexity of Miao et al.~\cite{MiaoSCIS2026}}
 \begin{itemize}
