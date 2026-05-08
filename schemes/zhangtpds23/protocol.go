@@ -1,3 +1,6 @@
+// Package zhangtpds23 reproduces the PCS-MPAP batch auditing core from
+// Zhang et al. TPDS 2023 under the single-server normalization used in the
+// FoldAudit comparison.
 package zhangtpds23
 
 import (
@@ -52,6 +55,7 @@ func NewProtocol(m, n, s int) *Protocol {
 	srs := make([]*bn256.G1, s)
 	power := benchcore.One()
 	for i := range srs {
+		// Public powers g^{alpha^i} allow the server to commit quotient polynomials.
 		srs[i] = benchcore.G1Base(power)
 		power = benchcore.Mul(power, alpha)
 	}
@@ -76,6 +80,7 @@ func (p *Protocol) Store(data [][][]*big.Int) (*StoredBatch, error) {
 				return nil, fmt.Errorf("file %d block %d: expected %d sectors", i, j, p.S)
 			}
 			file.Blocks[j] = benchcore.NewPoly(data[i][j])
+			// sigma_{l,j}=(H(FID_l||j) * g^{f_{l,j}(alpha)})^x.
 			body := benchcore.G1Add(hashIndex(file.FileID, j), p.ownerCommit(file.Blocks[j]))
 			file.Tags[j] = benchcore.G1Mul(body, p.x)
 		}
@@ -100,6 +105,7 @@ func (p *Protocol) TagVerify(stored *StoredBatch) bool {
 			return false
 		}
 		for j := range file.Blocks {
+			// Public tag validation checks e(sigma,g)=e(H(FID||j)g^{f(alpha)},v).
 			body := benchcore.G1Add(hashIndex(file.FileID, j), benchcore.CommitG1(p.SRSG1, file.Blocks[j]))
 			if !benchcore.PairingEqual(file.Tags[j], p.G2, body, p.V) {
 				return false
@@ -128,6 +134,7 @@ func (p *Protocol) ChallengeFromSeed(seed []byte, c int) Challenge {
 	}
 	points := make([]*big.Int, p.M)
 	for i := range points {
+		// r_l is the file-specific evaluation point in PCS-MPAP.
 		points[i] = benchcore.ScalarFromBytes("zhangtpds23:challenge:r", seed, benchcore.IntBytes(i))
 	}
 	z := benchcore.ScalarFromBytes("zhangtpds23:challenge:z", seed, benchcore.IntBytes(c))
@@ -144,6 +151,7 @@ func (p *Protocol) Prove(stored *StoredBatch, chal Challenge) (*Proof, error) {
 	F := benchcore.NewPoly([]*big.Int{benchcore.Zero()})
 	sumBetaDiff := benchcore.NewPoly([]*big.Int{benchcore.Zero()})
 	for i, file := range stored.Files {
+		// F_l(X)=sum_j v_j f_{l,j}(X), with tags aggregated by the same coefficients.
 		agg := benchcore.NewPoly([]*big.Int{benchcore.Zero()})
 		tagAgg := benchcore.G1Zero()
 		if len(chal.Indices[i]) != len(chal.Coeffs[i]) {
@@ -156,6 +164,7 @@ func (p *Protocol) Prove(stored *StoredBatch, chal Challenge) (*Proof, error) {
 		S := agg.Eval(chal.Points[i])
 		diff := agg.SubConstant(S)
 		ztExcept := zExcept(chal.Points, i)
+		// Build F(X)=sum_l gamma^{l-1} Z_{T\{r_l}}(X)(F_l(X)-F_l(r_l)).
 		F = F.Add(ztExcept.Mul(diff).Scale(benchcore.Pow(chal.Gamma, i)))
 		sumBetaDiff = sumBetaDiff.Add(diff.Scale(betas[i]))
 		sigmaPrime = benchcore.G1Add(sigmaPrime, benchcore.G1Mul(tagAgg, betas[i]))
@@ -170,6 +179,7 @@ func (p *Protocol) Prove(stored *StoredBatch, chal Challenge) (*Proof, error) {
 	}
 	ztAtZ := benchcore.ZPoly(chal.Points).Eval(chal.Z)
 	L := sumBetaDiff.Sub(Hb.Scale(ztAtZ))
+	// W' opens L(X) at z after removing the (X-z) factor.
 	LQuotient, LRem := L.DivLinear(chal.Z)
 	if LRem.Sign() != 0 {
 		return nil, fmt.Errorf("folded quotient polynomial has nonzero remainder")
@@ -193,11 +203,13 @@ func (p *Protocol) Verify(stored *StoredBatch, chal Challenge, proof *Proof) boo
 			return false
 		}
 		for pos, index := range chal.Indices[i] {
+			// zeta is the hash-authenticator side of the folded tag equation.
 			term := benchcore.G1Mul(hashIndex(file.FileID, index), chal.Coeffs[i][pos])
 			zeta = benchcore.G1Add(zeta, benchcore.G1Mul(term, betas[i]))
 		}
 	}
 	ztAtZ := benchcore.ZPoly(chal.Points).Eval(chal.Z)
+	// psi=g^{-E} W^{-Z_T(z)} and uMinusZV=g_2^{x(alpha-z)}.
 	psi := benchcore.G1Add(benchcore.G1Base(benchcore.Neg(proof.E)), benchcore.G1Mul(proof.W, benchcore.Neg(ztAtZ)))
 	uMinusZV := benchcore.G2Add(p.U, benchcore.G2Mul(p.V, benchcore.Neg(chal.Z)))
 	return benchcore.PairingProductIsOne(

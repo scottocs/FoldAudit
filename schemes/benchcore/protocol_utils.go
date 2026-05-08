@@ -1,3 +1,7 @@
+// Package benchcore contains shared finite-field, group, polynomial,
+// commitment, and Merkle utilities used by the protocol reproductions. The
+// helpers intentionally expose simple algebraic operations so the scheme code
+// can mirror the formulas in paper/refs/pdp_protocols.tex and FoldAudit.tex.
 package benchcore
 
 import (
@@ -130,6 +134,7 @@ func HashBytes(label string, parts ...[]byte) []byte {
 }
 
 func WriteFramed(dst interface{ Write([]byte) (int, error) }, value []byte) {
+	// Length framing prevents transcript ambiguity such as ["ab","c"] vs ["a","bc"].
 	var length [8]byte
 	binary.BigEndian.PutUint64(length[:], uint64(len(value)))
 	_, _ = dst.Write(length[:])
@@ -137,6 +142,7 @@ func WriteFramed(dst interface{ Write([]byte) (int, error) }, value []byte) {
 }
 
 func ScalarFromBytes(label string, parts ...[]byte) *big.Int {
+	// Domain-separated hash-to-scalar used for challenges and Fiat-Shamir values.
 	x := Normalize(new(big.Int).SetBytes(HashBytes(label, parts...)))
 	if x.Sign() == 0 {
 		x.SetInt64(1)
@@ -191,6 +197,7 @@ func RandomUniqueIndices(reader io.Reader, c, n int) ([]int, error) {
 		out = append(out, index)
 	}
 	sort.Ints(out)
+	// Sorted indices make transcript encoding deterministic across map iteration order.
 	return out, nil
 }
 
@@ -307,6 +314,7 @@ func (p Poly) SubConstant(c *big.Int) Poly {
 }
 
 func (p Poly) DivLinear(root *big.Int) (Poly, *big.Int) {
+	// Synthetic division by (X-root); the returned remainder equals p(root).
 	root = Normalize(root)
 	if len(p.Coeffs) == 1 {
 		return NewPoly([]*big.Int{Zero()}), Normalize(p.Coeffs[0])
@@ -365,6 +373,7 @@ func ZPoly(points []*big.Int) Poly {
 }
 
 func CommitG1(srs []*bn256.G1, poly Poly) *bn256.G1 {
+	// KZG-style commitment sum_i coeff_i * g^{tau^i}, represented additively.
 	out := G1Zero()
 	for i, coeff := range poly.Coeffs {
 		if i >= len(srs) {

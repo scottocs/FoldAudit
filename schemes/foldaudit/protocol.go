@@ -1,3 +1,7 @@
+// Package foldaudit implements the protocol described in paper/FoldAudit.tex.
+// The code follows the paper notation closely: files are split into chunks,
+// each chunk is encoded as a low-degree polynomial, and per-file KZG openings
+// are folded into one batch verification equation.
 package foldaudit
 
 import (
@@ -74,6 +78,7 @@ func Setup(config Config, reader io.Reader) (*Protocol, error) {
 	srs := make([]*bn256.G1, config.SectorsPerChunk)
 	power := benchcore.One()
 	for i := range srs {
+		// Public KZG SRS element g^{tau^i}; tau itself is kept only to model the data owner.
 		srs[i] = benchcore.G1Base(power)
 		power = benchcore.Mul(power, tau)
 	}
@@ -180,7 +185,9 @@ func (p *Protocol) Store(dataset [][][]*big.Int) (*StoredBatch, error) {
 			}
 			sectors[j] = cloneScalars(chunk)
 			polys[j] = benchcore.NewPoly(sectors[j])
+			// Store computes the chunk tag sigma_{i,j}=g^{f_{i,j}(tau)}.
 			tags[j] = p.ownerCommitPolynomial(polys[j])
+			// The leaf binds file identity, chunk position, and tag to prevent tag reuse.
 			leaves[j] = merkleLeaf(fileID, j, tags[j])
 		}
 
@@ -212,6 +219,7 @@ func (p *Protocol) Challenge() (*Challenge, error) {
 	for i := range coefficients {
 		coefficients[i] = make([]*big.Int, len(indices))
 		for j := range indices {
+			// Coefficients are sampled independently per file to avoid coupled aggregates.
 			coefficients[i][j], err = benchcore.RandomScalar(p.rand, true)
 			if err != nil {
 				return nil, err
@@ -221,6 +229,7 @@ func (p *Protocol) Challenge() (*Challenge, error) {
 
 	points := make([]*big.Int, p.Config.NumFiles)
 	for i := range points {
+		// Independent evaluation points isolate the per-file quotient relations.
 		points[i], err = benchcore.RandomScalar(p.rand, false)
 		if err != nil {
 			return nil, err
@@ -250,6 +259,7 @@ func (p *Protocol) ProofGen(stored *StoredBatch, chal *Challenge) (*AuditProof, 
 	fileProofs := make([]FileProof, p.Config.NumFiles)
 	masks := make([]*big.Int, p.Config.NumFiles)
 	for i := range stored.Files {
+		// f_i(X)=sum_j v_{i,j} f_{i,j}(X) is the challenged aggregate polynomial.
 		fi, err := p.aggregatePolynomial(stored.Files[i], chal, i)
 		if err != nil {
 			return nil, err
@@ -257,6 +267,7 @@ func (p *Protocol) ProofGen(stored *StoredBatch, chal *Challenge) (*AuditProof, 
 		bi := p.CommitPolynomial(fi)
 		yi := fi.Eval(chal.EvaluationPoints[i])
 
+		// yTilde hides y_i=f_i(r_i) with a one-time additive mask mu_i.
 		mu, err := benchcore.RandomScalar(p.rand, false)
 		if err != nil {
 			return nil, err
@@ -265,6 +276,7 @@ func (p *Protocol) ProofGen(stored *StoredBatch, chal *Challenge) (*AuditProof, 
 		yTilde := benchcore.Add(yi, mu)
 		Ri := benchcore.G1Base(mu)
 
+		// KZG witness for (f_i(X)-f_i(r_i))/(X-r_i).
 		wi, remainder := fi.SubConstant(yi).DivLinear(chal.EvaluationPoints[i])
 		if remainder.Sign() != 0 {
 			return nil, fmt.Errorf("file %d quotient has nonzero remainder", i)
@@ -300,6 +312,7 @@ func (p *Protocol) Verify(stored *StoredBatch, chal *Challenge, proof *AuditProo
 	}
 
 	for i, fp := range proof.FileProofs {
+		// First authenticate the sampled tags and recompute their homomorphic aggregate.
 		if !p.verifyAuth(stored.Files[i], stored.Roots[i], fp, chal) {
 			return false
 		}
@@ -318,6 +331,7 @@ func (p *Protocol) Verify(stored *StoredBatch, chal *Challenge, proof *AuditProo
 	right := benchcore.G1Zero()
 	rhoPower := benchcore.One()
 	for i, fp := range proof.FileProofs {
+		// Fold all per-file KZG equations with transcript-bound powers of rho.
 		term := benchcore.G1Add(fp.B, fp.R)
 		term = benchcore.G1Add(term, benchcore.G1Base(benchcore.Neg(fp.YTilde)))
 		term = benchcore.G1Add(term, benchcore.G1Mul(fp.Cw, chal.EvaluationPoints[i]))
@@ -396,6 +410,7 @@ func (p *Protocol) aggregateProofTag(fp FileProof, chal *Challenge, fileIndex in
 		if auth.Index != chal.Indices[pos] || auth.Tag == nil {
 			return nil, false
 		}
+		// Homomorphic tag aggregation mirrors the polynomial aggregation coefficients.
 		out = benchcore.G1Add(out, benchcore.G1Mul(auth.Tag, chal.Coefficients[fileIndex][pos]))
 	}
 	return out, true
@@ -410,6 +425,7 @@ func (p *Protocol) schnorrMaskProofs(roots [][]byte, chal *Challenge, fps []File
 			return nil, err
 		}
 		A := benchcore.G1Base(a)
+		// Prove knowledge of mu_i such that R_i=g^{mu_i} without exposing the mask.
 		c := benchcore.ScalarFromBytes("foldaudit:mask-pok", stmt, benchcore.IntBytes(i), g1Bytes(A))
 		z := benchcore.Add(a, benchcore.Mul(c, masks[i]))
 		proofs[i] = SchnorrProof{A: A, Z: z}

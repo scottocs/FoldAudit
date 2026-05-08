@@ -1,3 +1,6 @@
+// Package yutc25 reproduces the Yu et al. TC 2025 storage-verification core:
+// polynomial tags are authenticated by a Merkle tree, and each audit returns a
+// quotient polynomial plus challenged tag openings.
 package yutc25
 
 import (
@@ -71,6 +74,7 @@ func NewProtocolWithReader(n, s int, reader io.Reader) *Protocol {
 	srs := make([]*bn256.G1, s+1)
 	power := benchcore.One()
 	for i := range srs {
+		// Psi_i=g^{psi^i}; one extra power is needed for the shifted quotient check.
 		srs[i] = benchcore.G1Base(power)
 		power = benchcore.Mul(power, psi)
 	}
@@ -88,7 +92,9 @@ func (p *Protocol) Store(blocks [][]*big.Int) (*StoredData, error) {
 			return nil, fmt.Errorf("block %d: expected %d sectors", i, p.S)
 		}
 		out.Blocks[i] = benchcore.NewPoly(block)
+		// varpi_i is modeled as g^{P_{F_i}(psi)}.
 		out.Tags[i] = p.ownerCommit(out.Blocks[i])
+		// Tag-IMHT is represented by a Merkle tree over tag commitments.
 		leaves[i] = yuLeaf(out.Tags[i])
 	}
 	tree, err := benchcore.NewMerkleTree(leaves)
@@ -128,6 +134,7 @@ func (p *Protocol) ChallengeFromKeys(k1, k2 []byte, c int) Challenge {
 	if c > p.N {
 		c = p.N
 	}
+	// k1 selects challenged chunk identifiers; k2 derives coefficients and z.
 	indices := uniqueIndices("yutc25:prp", k1, c, p.N)
 	coeffs := make([]*big.Int, c)
 	for i := 0; i < c; i++ {
@@ -162,9 +169,11 @@ func (p *Protocol) Prove(stored *StoredData, chal Challenge) (*Proof, error) {
 	B := benchcore.G1Base(beta)
 	eta := benchcore.ScalarFromBytes("yutc25/eta", B.Marshal())
 
+	// The privacy-enhanced variant adds beta*eta as a constant mask.
 	agg := benchcore.NewPoly([]*big.Int{benchcore.Mul(beta, eta)})
 	openings := make([]TagOpening, len(chal.Indices))
 	for pos, index := range chal.Indices {
+		// P_prf(X)=beta*eta+sum_i a_i P_{F_i}(X).
 		agg = agg.Add(stored.Blocks[index].Scale(chal.Coeffs[pos]))
 		path, err := stored.Tree.Proof(index)
 		if err != nil {
@@ -173,6 +182,7 @@ func (p *Protocol) Prove(stored *StoredData, chal Challenge) (*Proof, error) {
 		openings[pos] = TagOpening{Index: index, Tag: stored.Tags[index], Path: path}
 	}
 	value := agg.Eval(chal.Z)
+	// Z_prf(X)=(P_prf(X)-P_prf(z))/(X-z).
 	quotient, rem := agg.SubConstant(value).DivLinear(chal.Z)
 	if rem.Sign() != 0 {
 		return nil, fmt.Errorf("nonzero quotient remainder")
@@ -186,6 +196,7 @@ func (p *Protocol) Verify(root []byte, chal Challenge, proof *Proof) bool {
 	}
 	left := benchcore.G1Zero()
 	for pos, opening := range proof.Openings {
+		// Merkle paths authenticate the challenged tag set before algebraic checking.
 		if opening.Index != chal.Indices[pos] || !benchcore.VerifyMerkle(yuLeaf(opening.Tag), root, opening.Path) {
 			return false
 		}
@@ -197,6 +208,7 @@ func (p *Protocol) Verify(root []byte, chal Challenge, proof *Proof) bool {
 	hz := benchcore.CommitG1(p.SRS, proof.Quotient)
 	hprf := benchcore.G1Zero()
 	for i, coeff := range proof.Quotient.Coeffs {
+		// hprf represents g^{psi*Z_prf(psi)} using the shifted SRS powers.
 		hprf = benchcore.G1Add(hprf, benchcore.G1Mul(p.SRS[i+1], coeff))
 	}
 	right := benchcore.G1Add(hprf, benchcore.G1Mul(hz, benchcore.Neg(chal.Z)))

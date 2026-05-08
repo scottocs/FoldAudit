@@ -39,10 +39,13 @@ func fileProofStatementBytes(fps []FileProof) []byte {
 }
 
 func maskStatementBytes(roots [][]byte, chal *Challenge, fps []FileProof) []byte {
+	// The Schnorr challenge binds the mask proof to the audit statement, so a
+	// proof for one challenge/root set cannot be replayed in another audit.
 	return benchcore.HashBytes("foldaudit:mask-stmt", challengeBytes(chal), rootsBytes(roots), fileProofStatementBytes(fps))
 }
 
 func schnorrProofBytes(proofs []SchnorrProof) []byte {
+	// The folding scalar rho is derived after mask proofs are fixed.
 	parts := make([][]byte, 0, 1+2*len(proofs))
 	parts = append(parts, []byte("schnorr"))
 	for _, proof := range proofs {

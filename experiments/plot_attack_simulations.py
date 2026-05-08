@@ -76,9 +76,9 @@ def plot_sampling_detection() -> None:
     colors = ["#4C78A8", "#54A24B", "#F58518", "#B279A2"]
 
     fig, ax = plt.subplots(figsize=(3.55, 2.55))
-    for rho, color in zip(ratios, colors):
-        detection = 1.0 - np.power(1.0 - rho, c_values)
-        ax.plot(c_values, detection, color=color, label=fr"$\rho={rho * 100:.1f}\%$")
+    for delta, color in zip(ratios, colors):
+        detection = 1.0 - np.power(1.0 - delta, c_values)
+        ax.plot(c_values, detection, color=color, label=fr"$\delta={delta * 100:.1f}\%$")
 
     c_star = 690
     target = 0.999

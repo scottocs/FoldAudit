@@ -4,7 +4,7 @@
 The CSV consumed by this script must be produced by:
 
   go run ./experiments/protocolbench -profile paper \
-    -repeats 3 -out experiments/out/vi_evaluation/vi_overhead_all.csv
+    -repeats 10 -out experiments/out/vi_evaluation/vi_overhead_all.csv
 
 The Go runner generates simulated file contents and executes each reproduced
 protocol's Store, Challenge, ProofGen, and Verify functions directly.  This
@@ -24,10 +24,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from matplotlib.transforms import ScaledTranslation
 
 
 OUT = Path("experiments/out/vi_evaluation")
+PAPER_FIGURES = Path("paper/figures/vi_evaluation")
 DEFAULT_CSV = OUT / "vi_overhead_all.csv"
 
 SCHEMES = ["YuTC25", "ZhangTPDS23", "MiaoSCIS2026", "XuTIFS26", "FoldAudit"]
@@ -52,13 +52,6 @@ MARKERS = {
     "XuTIFS26": "D",
     "FoldAudit": "P",
 }
-HATCHES = {
-    "YuTC25": "",
-    "ZhangTPDS23": "//",
-    "MiaoSCIS2026": "\\\\",
-    "XuTIFS26": "..",
-    "FoldAudit": "xx",
-}
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", type=Path, default=DEFAULT_CSV, help="protocol execution CSV to plot")
@@ -67,7 +60,7 @@ def parse_args() -> argparse.Namespace:
         choices=("paper", "quick"),
         help="run the Go protocol benchmark first; 'paper' executes the full VI workload",
     )
-    parser.add_argument("--repeats", type=int, default=3, help="protocol executions to average per workload point")
+    parser.add_argument("--repeats", type=int, default=10, help="protocol executions per workload point")
     return parser.parse_args()
 
 
@@ -89,7 +82,7 @@ def run_protocol_benchmark(profile: str, csv_path: Path, repeats: int) -> None:
 def load_data(csv_path: Path) -> pd.DataFrame:
     if not csv_path.exists():
         raise SystemExit(
-            f"missing {csv_path}; run `go run ./experiments/protocolbench -profile paper -repeats 3 -out {csv_path}` first"
+            f"missing {csv_path}; run `go run ./experiments/protocolbench -profile paper -repeats 10 -out {csv_path}` first"
         )
     df = pd.read_csv(csv_path)
     required = {"measurement_method", "scenario", "variable", "value", "scheme", "phase", "seconds", "ok"}
@@ -131,7 +124,10 @@ def setup_style() -> None:
 
 
 def save(fig: plt.Figure, name: str) -> None:
-    fig.savefig(OUT / f"{name}.pdf")
+    OUT.mkdir(parents=True, exist_ok=True)
+    PAPER_FIGURES.mkdir(parents=True, exist_ok=True)
+    for directory in (OUT, PAPER_FIGURES):
+        fig.savefig(directory / f"{name}.pdf")
     plt.close(fig)
 
 
@@ -139,12 +135,6 @@ def linear_y(ax: plt.Axes) -> None:
     ax.grid(True, axis="y", which="major", color="#D0D0D0")
     ax.grid(False, axis="x")
     sns.despine(ax=ax, top=True, right=True)
-
-
-def shift_xticklabels_right(ax: plt.Axes, points: float = 8.0) -> None:
-    shift = ScaledTranslation(points / 72.0, 0.0, ax.figure.dpi_scale_trans)
-    for label in ax.get_xticklabels():
-        label.set_transform(label.get_transform() + shift)
 
 
 def plot_lines(df: pd.DataFrame, scenario: str, phase: str, x: str, xlabel: str, name: str) -> None:
@@ -170,7 +160,7 @@ def plot_lines(df: pd.DataFrame, scenario: str, phase: str, x: str, xlabel: str,
     if name == "store_vs_file_size":
         values = sorted(data[x].unique())
         if len(values) > 10:
-            ax.set_xticks([10, 20, 40, 60, 80, 100])
+            ax.set_xticks([10, 20, 30, 40, 50])
     ax.legend(
         ncol=5,
         frameon=False,
@@ -186,71 +176,9 @@ def plot_lines(df: pd.DataFrame, scenario: str, phase: str, x: str, xlabel: str,
     save(fig, name)
 
 
-def plot_phase_bars(df: pd.DataFrame) -> None:
-    phases = ["Store", "Challenge", "ProofGen", "Verify"]
-    data = df[(df.scenario == "baseline") & (df.phase.isin(phases))].copy()
-    fig, ax = plt.subplots(figsize=(5.15, 2.75))
-    width = 0.18
-    offsets = [-1.5 * width, -0.5 * width, 0.5 * width, 1.5 * width]
-    colors = ["#9ECAE1", "#BDBDBD", "#74C476", "#FD8D3C"]
-    x_positions = list(range(len(SCHEMES)))
-    for offset, phase, color in zip(offsets, phases, colors):
-        part = data[data.phase == phase].sort_values("scheme")
-        bars = ax.bar(
-            [x + offset for x in x_positions],
-            part["seconds"],
-            width=width,
-            label=phase,
-            color=color,
-            edgecolor="#222222",
-            linewidth=0.45,
-        )
-        if phase == "Verify":
-            for bar in bars:
-                bar.set_hatch("//")
-    linear_y(ax)
-    ax.set_xticks(x_positions)
-    ax.set_xticklabels([DISPLAY[s] for s in SCHEMES], rotation=24, ha="right")
-    shift_xticklabels_right(ax)
-    ax.set_ylabel("Time (s)")
-    ax.legend(ncol=4, frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.02), borderaxespad=0.0)
-    fig.tight_layout(rect=(0, 0, 1, 0.90))
-    save(fig, "baseline_phase_overhead")
-
-
-def plot_average_bar(summary: pd.DataFrame) -> None:
-    data = summary.sort_values("scheme", key=lambda s: s.map({name: i for i, name in enumerate(SCHEMES)}))
-    fig, ax = plt.subplots(figsize=(5.15, 2.75))
-    labels = [DISPLAY[s] for s in data["scheme"]]
-    bars = ax.bar(labels, data["mean_audit_seconds"], color=[PALETTE[s] for s in data["scheme"]])
-    for bar, scheme in zip(bars, data["scheme"]):
-        bar.set_hatch(HATCHES[scheme])
-        bar.set_edgecolor("#222222")
-        bar.set_linewidth(0.55)
-    linear_y(ax)
-    ax.set_ylabel("Mean audit time (s)")
-    ax.tick_params(axis="x", rotation=0)
-    for tick in ax.get_xticklabels():
-        tick.set_ha("center")
-    fig.tight_layout()
-    save(fig, "mean_audit_overhead")
-
-
-def write_derived_outputs(df: pd.DataFrame) -> pd.DataFrame:
+def write_derived_outputs(df: pd.DataFrame) -> None:
     for scenario in ("baseline", "vary_m", "vary_B", "vary_s"):
         df[df.scenario == scenario].to_csv(OUT / f"{scenario}.csv", index=False)
-    audit = df[(df.phase == "Audit") & (df.scenario.isin(["vary_m", "vary_B", "vary_s"]))].copy()
-    summary = (
-        audit.groupby("scheme", observed=True, as_index=False)
-        .agg(
-            mean_audit_seconds=("seconds", "mean"),
-            min_audit_seconds=("seconds", "min"),
-            max_audit_seconds=("seconds", "max"),
-        )
-        .sort_values("mean_audit_seconds")
-    )
-    summary.to_csv(OUT / "average_overhead_summary.csv", index=False)
-    return summary
 
 
 def main() -> None:
@@ -261,14 +189,19 @@ def main() -> None:
 
     setup_style()
     df = load_data(args.csv)
-    summary = write_derived_outputs(df)
+    write_derived_outputs(df)
 
-    plot_phase_bars(df)
-    plot_average_bar(summary)
-    plot_lines(df, "vary_m", "Audit", "m", "Batch size m", "audit_vs_m")
     plot_lines(df, "vary_B", "Store", "B_MB", "File size B (MB)", "store_vs_file_size")
+    plot_lines(df, "vary_s", "Store", "s", "Sectors per chunk s", "store_vs_s")
+    plot_lines(df, "vary_m", "Store", "m", "Batch size m", "store_vs_m")
+    plot_lines(df, "vary_B", "ProofGen", "B_MB", "File size B (MB)", "proofgen_vs_file_size")
     plot_lines(df, "vary_s", "ProofGen", "s", "Sectors per chunk s", "proofgen_vs_s")
+    plot_lines(df, "vary_m", "ProofGen", "m", "Batch size m", "proofgen_vs_m")
+    plot_lines(df, "vary_B", "Verify", "B_MB", "File size B (MB)", "verify_vs_file_size")
     plot_lines(df, "vary_s", "Verify", "s", "Sectors per chunk s", "verify_vs_s")
+    plot_lines(df, "vary_m", "Verify", "m", "Batch size m", "verify_vs_m")
+
+    subprocess.run(["python3", "experiments/render_additional_vi_runtime_figures.py"], check=True)
 
     print(f"Wrote evaluation figures to {OUT}")
 

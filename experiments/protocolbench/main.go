@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"time"
 
@@ -21,7 +22,7 @@ import (
 
 const (
 	challengeSize = 690
-	baseM         = 5
+	baseM         = 4
 	baseBMB       = 10
 	baseS         = 20
 )
@@ -55,13 +56,22 @@ type timedResult struct {
 	ok       bool
 }
 
+type phaseSamples struct {
+	seconds []float64
+	ok      bool
+}
+
 func main() {
 	outPath := flag.String("out", "experiments/out/vi_evaluation/vi_overhead_all.csv", "output CSV path")
 	profile := flag.String("profile", "paper", "benchmark profile: paper or quick")
-	repeats := flag.Int("repeats", 3, "number of protocol executions to average per workload point")
+	phases := flag.String("phases", "all", "benchmark phases: all, online, or store")
+	repeats := flag.Int("repeats", 10, "number of protocol executions per workload point")
 	flag.Parse()
 	if *repeats < 1 {
 		fatal(fmt.Errorf("repeats must be at least 1"))
+	}
+	if *phases != "all" && *phases != "online" && *phases != "store" {
+		fatal(fmt.Errorf("unknown phases %q", *phases))
 	}
 
 	file, writer, err := createCSV(*outPath)
@@ -72,7 +82,7 @@ func main() {
 	if err := writeCSVHeader(writer); err != nil {
 		fatal(err)
 	}
-	if err := runProfile(*profile, *repeats, func(rows []row) error {
+	if err := runProfile(*profile, *repeats, *phases, func(rows []row) error {
 		if err := writeCSVRows(writer, rows); err != nil {
 			return err
 		}
@@ -88,12 +98,12 @@ func main() {
 	fmt.Printf("wrote protocol execution measurements to %s\n", *outPath)
 }
 
-func runProfile(profile string, repeats int, emit func([]row) error) error {
+func runProfile(profile string, repeats int, phases string, emit func([]row) error) error {
 	var mValues, bValues, sValues []int
 	switch profile {
 	case "paper":
-		mValues = intRange(5, 30, 5)
-		bValues = intRange(10, 100, 10)
+		mValues = intRange(4, 20, 4)
+		bValues = intRange(10, 50, 10)
 		sValues = []int{20, 40, 60, 80, 100}
 	case "quick":
 		mValues = []int{1, 2}
@@ -110,46 +120,70 @@ func runProfile(profile string, repeats int, emit func([]row) error) error {
 			repeats = 2
 		}
 	}
-	if err := emit(runAllSchemes("baseline", "baseline", 0, baseline, repeats)); err != nil {
+	if err := emit(runAllSchemes("baseline", "baseline", 0, baseline, repeats, phases)); err != nil {
 		return err
 	}
 	for _, m := range mValues {
 		p := params{M: m, BMB: baseline.BMB, S: baseline.S, C: baseline.C}
-		if err := emit(runAllSchemes("vary_m", "m", m, p, repeats)); err != nil {
+		if err := emit(runAllSchemes("vary_m", "m", m, p, repeats, phases)); err != nil {
 			return err
 		}
 	}
 	for _, b := range bValues {
 		p := params{M: baseline.M, BMB: b, S: baseline.S, C: baseline.C}
-		if err := emit(runAllSchemes("vary_B", "B_MB", b, p, repeats)); err != nil {
+		if err := emit(runAllSchemes("vary_B", "B_MB", b, p, repeats, phases)); err != nil {
 			return err
 		}
 	}
 	for _, s := range sValues {
 		p := params{M: baseline.M, BMB: baseline.BMB, S: s, C: baseline.C}
-		if err := emit(runAllSchemes("vary_s", "s", s, p, repeats)); err != nil {
+		if err := emit(runAllSchemes("vary_s", "s", s, p, repeats, phases)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func runAllSchemes(scenario, variable string, value int, p params, repeats int) []row {
+func runAllSchemes(scenario, variable string, value int, p params, repeats int, phases string) []row {
 	schemes := []struct {
-		name string
-		fn   func(params) map[string]timedResult
+		name   string
+		fn     func(params) map[string]timedResult
+		online func(params, int) map[string]phaseSamples
+		store  func(params) timedResult
 	}{
-		{"YuTC25", runYu},
-		{"ZhangTPDS23", runZhang},
-		{"MiaoSCIS2026", runMiao},
-		{"XuTIFS26", runXu},
-		{"FoldAudit", runFoldAudit},
+		{"YuTC25", runYu, runYuOnline, runYuStore},
+		{"ZhangTPDS23", runZhang, runZhangOnline, runZhangStore},
+		{"MiaoSCIS2026", runMiao, runMiaoOnline, runMiaoStore},
+		{"XuTIFS26", runXu, runXuOnline, runXuStore},
+		{"FoldAudit", runFoldAudit, runFoldAuditOnline, runFoldAuditStore},
 	}
 
 	var rows []row
 	for _, scheme := range schemes {
 		fmt.Fprintf(os.Stderr, "running %s scenario=%s %s=%d m=%d B_MB=%d s=%d c=%d n=%d repeats=%d\n",
 			scheme.name, scenario, variable, value, p.M, p.BMB, p.S, p.C, p.N(), repeats)
+		if phases == "online" {
+			results := scheme.online(p, repeats)
+			for _, phase := range []string{"ProofGen", "Verify"} {
+				sample := results[phase]
+				median, stddev := medianStdDev(sample.seconds)
+				rows = append(rows, row{Scenario: scenario, Variable: variable, Value: value, Scheme: scheme.name, Phase: phase, Params: p, Seconds: median, StdDev: stddev, Repeats: repeats, OK: sample.ok})
+			}
+			continue
+		}
+		if phases == "store" {
+			var samples []float64
+			ok := true
+			for repeat := 1; repeat <= repeats; repeat++ {
+				fmt.Fprintf(os.Stderr, "  repeat %d/%d\n", repeat, repeats)
+				result := scheme.store(p)
+				samples = append(samples, result.duration.Seconds())
+				ok = ok && result.ok
+			}
+			median, stddev := medianStdDev(samples)
+			rows = append(rows, row{Scenario: scenario, Variable: variable, Value: value, Scheme: scheme.name, Phase: "Store", Params: p, Seconds: median, StdDev: stddev, Repeats: repeats, OK: ok})
+			continue
+		}
 		samples := make(map[string][]float64)
 		phaseOK := map[string]bool{"Store": true, "Challenge": true, "ProofGen": true, "Verify": true, "Audit": true}
 		for repeat := 1; repeat <= repeats; repeat++ {
@@ -166,11 +200,11 @@ func runAllSchemes(scenario, variable string, value int, p params, repeats int) 
 			phaseOK["Audit"] = phaseOK["Audit"] && auditOK
 		}
 		for _, phase := range []string{"Store", "Challenge", "ProofGen", "Verify"} {
-			mean, stddev := meanStdDev(samples[phase])
-			rows = append(rows, row{Scenario: scenario, Variable: variable, Value: value, Scheme: scheme.name, Phase: phase, Params: p, Seconds: mean, StdDev: stddev, Repeats: repeats, OK: phaseOK[phase]})
+			median, stddev := medianStdDev(samples[phase])
+			rows = append(rows, row{Scenario: scenario, Variable: variable, Value: value, Scheme: scheme.name, Phase: phase, Params: p, Seconds: median, StdDev: stddev, Repeats: repeats, OK: phaseOK[phase]})
 		}
-		mean, stddev := meanStdDev(samples["Audit"])
-		rows = append(rows, row{Scenario: scenario, Variable: variable, Value: value, Scheme: scheme.name, Phase: "Audit", Params: p, Seconds: mean, StdDev: stddev, Repeats: repeats, OK: phaseOK["Audit"]})
+		median, stddev := medianStdDev(samples["Audit"])
+		rows = append(rows, row{Scenario: scenario, Variable: variable, Value: value, Scheme: scheme.name, Phase: "Audit", Params: p, Seconds: median, StdDev: stddev, Repeats: repeats, OK: phaseOK["Audit"]})
 	}
 	return rows
 }
@@ -200,6 +234,40 @@ func runXu(p params) map[string]timedResult {
 	return map[string]timedResult{"Store": store, "Challenge": challenge, "ProofGen": prove, "Verify": verify}
 }
 
+func runXuStore(p params) timedResult {
+	n := p.N()
+	protocol := xutifs26.NewProtocol(p.M, n, p.S)
+	data := dataset(p.M, n, p.S, "xu")
+	return timed(func() bool {
+		_, err := protocol.Store(data)
+		return err == nil
+	})
+}
+
+func runXuOnline(p params, repeats int) map[string]phaseSamples {
+	n := p.N()
+	protocol := xutifs26.NewProtocol(p.M, n, p.S)
+	stored, err := protocol.Store(dataset(p.M, n, p.S, "xu"))
+	if err != nil {
+		return failedOnlineSamples()
+	}
+	samples := newOnlineSamples()
+	for repeat := 1; repeat <= repeats; repeat++ {
+		fmt.Fprintf(os.Stderr, "  repeat %d/%d\n", repeat, repeats)
+		chal := protocol.Challenge(p.C)
+		var proof *xutifs26.Proof
+		prove := timed(func() bool {
+			var err error
+			proof, err = protocol.Prove(stored, chal)
+			return err == nil
+		})
+		verify := timed(func() bool { return protocol.Verify(stored, chal, proof) })
+		appendOnlineSample(samples, "ProofGen", prove)
+		appendOnlineSample(samples, "Verify", verify)
+	}
+	return samples
+}
+
 func runYu(p params) map[string]timedResult {
 	n := p.N()
 	protocol := yutc25.NewProtocol(n, p.S)
@@ -225,6 +293,40 @@ func runYu(p params) map[string]timedResult {
 	return map[string]timedResult{"Store": store, "Challenge": challenge, "ProofGen": prove, "Verify": verify}
 }
 
+func runYuStore(p params) timedResult {
+	n := p.N()
+	protocol := yutc25.NewProtocol(n, p.S)
+	data := dataset(p.M, n, p.S, "yu")
+	return timed(func() bool {
+		_, err := protocol.StoreBatch(data)
+		return err == nil
+	})
+}
+
+func runYuOnline(p params, repeats int) map[string]phaseSamples {
+	n := p.N()
+	protocol := yutc25.NewProtocol(n, p.S)
+	stored, err := protocol.StoreBatch(dataset(p.M, n, p.S, "yu"))
+	if err != nil {
+		return failedOnlineSamples()
+	}
+	samples := newOnlineSamples()
+	for repeat := 1; repeat <= repeats; repeat++ {
+		fmt.Fprintf(os.Stderr, "  repeat %d/%d\n", repeat, repeats)
+		chal := protocol.BatchChallenge(p.M, p.C)
+		var proof *yutc25.BatchProof
+		prove := timed(func() bool {
+			var err error
+			proof, err = protocol.ProveBatch(stored, chal)
+			return err == nil
+		})
+		verify := timed(func() bool { return protocol.VerifyBatch(stored, chal, proof) })
+		appendOnlineSample(samples, "ProofGen", prove)
+		appendOnlineSample(samples, "Verify", verify)
+	}
+	return samples
+}
+
 func runZhang(p params) map[string]timedResult {
 	n := p.N()
 	protocol := zhangtpds23.NewProtocol(p.M, n, p.S)
@@ -248,6 +350,40 @@ func runZhang(p params) map[string]timedResult {
 	})
 	verify := timed(func() bool { return protocol.Verify(stored, chal, proof) })
 	return map[string]timedResult{"Store": store, "Challenge": challenge, "ProofGen": prove, "Verify": verify}
+}
+
+func runZhangStore(p params) timedResult {
+	n := p.N()
+	protocol := zhangtpds23.NewProtocol(p.M, n, p.S)
+	data := dataset(p.M, n, p.S, "zhang")
+	return timed(func() bool {
+		_, err := protocol.Store(data)
+		return err == nil
+	})
+}
+
+func runZhangOnline(p params, repeats int) map[string]phaseSamples {
+	n := p.N()
+	protocol := zhangtpds23.NewProtocol(p.M, n, p.S)
+	stored, err := protocol.Store(dataset(p.M, n, p.S, "zhang"))
+	if err != nil {
+		return failedOnlineSamples()
+	}
+	samples := newOnlineSamples()
+	for repeat := 1; repeat <= repeats; repeat++ {
+		fmt.Fprintf(os.Stderr, "  repeat %d/%d\n", repeat, repeats)
+		chal := protocol.Challenge(p.C)
+		var proof *zhangtpds23.Proof
+		prove := timed(func() bool {
+			var err error
+			proof, err = protocol.Prove(stored, chal)
+			return err == nil
+		})
+		verify := timed(func() bool { return protocol.Verify(stored, chal, proof) })
+		appendOnlineSample(samples, "ProofGen", prove)
+		appendOnlineSample(samples, "Verify", verify)
+	}
+	return samples
 }
 
 func runMiao(p params) map[string]timedResult {
@@ -277,6 +413,46 @@ func runMiao(p params) map[string]timedResult {
 	})
 	verify := timed(func() bool { return protocol.Verify(stored, chal, proof) })
 	return map[string]timedResult{"Store": store, "Challenge": challenge, "ProofGen": prove, "Verify": verify}
+}
+
+func runMiaoStore(p params) timedResult {
+	n := p.N()
+	protocol := miaoscis2026.NewProtocol(n)
+	files := miaoFiles(p.M, n)
+	return timed(func() bool {
+		_, err := protocol.Store(files)
+		return err == nil
+	})
+}
+
+func runMiaoOnline(p params, repeats int) map[string]phaseSamples {
+	n := p.N()
+	protocol := miaoscis2026.NewProtocol(n)
+	stored, err := protocol.Store(miaoFiles(p.M, n))
+	if err != nil {
+		return failedOnlineSamples()
+	}
+	samples := newOnlineSamples()
+	for repeat := 1; repeat <= repeats; repeat++ {
+		fmt.Fprintf(os.Stderr, "  repeat %d/%d\n", repeat, repeats)
+		trap, err := protocol.Trapdoor(stored, []string{"audit"})
+		if err != nil {
+			appendOnlineSample(samples, "ProofGen", timedResult{ok: false})
+			appendOnlineSample(samples, "Verify", timedResult{ok: false})
+			continue
+		}
+		chal := protocol.ChallengeWithTrapdoor(trap, p.C, p.M)
+		var proof *miaoscis2026.Proof
+		prove := timed(func() bool {
+			var err error
+			proof, err = protocol.Prove(stored, chal)
+			return err == nil
+		})
+		verify := timed(func() bool { return protocol.Verify(stored, chal, proof) })
+		appendOnlineSample(samples, "ProofGen", prove)
+		appendOnlineSample(samples, "Verify", verify)
+	}
+	return samples
 }
 
 func runFoldAudit(p params) map[string]timedResult {
@@ -311,6 +487,82 @@ func runFoldAudit(p params) map[string]timedResult {
 	})
 	verify := timed(func() bool { return protocol.Verify(stored, chal, proof) })
 	return map[string]timedResult{"Store": store, "Challenge": challenge, "ProofGen": prove, "Verify": verify}
+}
+
+func runFoldAuditStore(p params) timedResult {
+	n := p.N()
+	cfg := foldaudit.DefaultConfig()
+	cfg.NumFiles = p.M
+	cfg.ChunksPerFile = n
+	cfg.SectorsPerChunk = p.S
+	cfg.ChallengedChunks = p.C
+	protocol, err := foldaudit.Setup(cfg, newDeterministicReader(42))
+	if err != nil {
+		return timedResult{ok: false}
+	}
+	data := dataset(p.M, n, p.S, "foldaudit")
+	return timed(func() bool {
+		_, err := protocol.Store(data)
+		return err == nil
+	})
+}
+
+func runFoldAuditOnline(p params, repeats int) map[string]phaseSamples {
+	n := p.N()
+	cfg := foldaudit.DefaultConfig()
+	cfg.NumFiles = p.M
+	cfg.ChunksPerFile = n
+	cfg.SectorsPerChunk = p.S
+	cfg.ChallengedChunks = p.C
+	protocol, err := foldaudit.Setup(cfg, newDeterministicReader(42))
+	if err != nil {
+		return failedOnlineSamples()
+	}
+	stored, err := protocol.Store(dataset(p.M, n, p.S, "foldaudit"))
+	if err != nil {
+		return failedOnlineSamples()
+	}
+	samples := newOnlineSamples()
+	for repeat := 1; repeat <= repeats; repeat++ {
+		fmt.Fprintf(os.Stderr, "  repeat %d/%d\n", repeat, repeats)
+		chal, err := protocol.Challenge()
+		if err != nil {
+			appendOnlineSample(samples, "ProofGen", timedResult{ok: false})
+			appendOnlineSample(samples, "Verify", timedResult{ok: false})
+			continue
+		}
+		var proof *foldaudit.AuditProof
+		prove := timed(func() bool {
+			var err error
+			proof, err = protocol.ProofGen(stored, chal)
+			return err == nil
+		})
+		verify := timed(func() bool { return protocol.Verify(stored, chal, proof) })
+		appendOnlineSample(samples, "ProofGen", prove)
+		appendOnlineSample(samples, "Verify", verify)
+	}
+	return samples
+}
+
+func newOnlineSamples() map[string]phaseSamples {
+	return map[string]phaseSamples{
+		"ProofGen": {ok: true},
+		"Verify":   {ok: true},
+	}
+}
+
+func appendOnlineSample(samples map[string]phaseSamples, phase string, result timedResult) {
+	sample := samples[phase]
+	sample.seconds = append(sample.seconds, result.duration.Seconds())
+	sample.ok = sample.ok && result.ok
+	samples[phase] = sample
+}
+
+func failedOnlineSamples() map[string]phaseSamples {
+	return map[string]phaseSamples{
+		"ProofGen": {ok: false},
+		"Verify":   {ok: false},
+	}
 }
 
 func dataset(m, n, s int, label string) [][][]*big.Int {
@@ -413,9 +665,16 @@ func writeCSVRows(w *csv.Writer, rows []row) error {
 	return nil
 }
 
-func meanStdDev(values []float64) (float64, float64) {
+func medianStdDev(values []float64) (float64, float64) {
 	if len(values) == 0 {
 		return 0, 0
+	}
+	sorted := append([]float64(nil), values...)
+	sort.Float64s(sorted)
+	mid := len(sorted) / 2
+	median := sorted[mid]
+	if len(sorted)%2 == 0 {
+		median = (sorted[mid-1] + sorted[mid]) / 2
 	}
 	var sum float64
 	for _, v := range values {
@@ -423,14 +682,14 @@ func meanStdDev(values []float64) (float64, float64) {
 	}
 	mean := sum / float64(len(values))
 	if len(values) == 1 {
-		return mean, 0
+		return median, 0
 	}
 	var squared float64
 	for _, v := range values {
 		diff := v - mean
 		squared += diff * diff
 	}
-	return mean, math.Sqrt(squared / float64(len(values)-1))
+	return median, math.Sqrt(squared / float64(len(values)-1))
 }
 
 func intRange(start, end, step int) []int {

@@ -144,8 +144,8 @@ protocol_execution,vary_m,m,30,XuTIFS26,Challenge,30,10,20,690,15625,0.002429584
 protocol_execution,vary_m,m,30,XuTIFS26,ProofGen,30,10,20,690,15625,0.583674111,0.038401129,3,True
 protocol_execution,vary_m,m,30,XuTIFS26,Verify,30,10,20,690,15625,2.067007695,0.074708228,3,True
 protocol_execution,vary_m,m,30,XuTIFS26,Audit,30,10,20,690,15625,2.65311139,0.097846219,3,True
-protocol_execution,vary_m,m,30,FoldAudit,Store,30,10,20,690,15625,56.872046321,4.94608234,7,True
-protocol_execution,vary_m,m,30,FoldAudit,Challenge,30,10,20,690,15625,0.010070339,0.00342535,7,True
-protocol_execution,vary_m,m,30,FoldAudit,ProofGen,30,10,20,690,15625,1.200300131,0.252175411,7,True
-protocol_execution,vary_m,m,30,FoldAudit,Verify,30,10,20,690,15625,2.051656958,0.374675906,7,True
-protocol_execution,vary_m,m,30,FoldAudit,Audit,30,10,20,690,15625,3.262027428,0.571367061,7,True
+protocol_execution,vary_m,m,30,FoldAudit,Store,30,10,20,690,15625,108.646213389,12.900461713,3,True
+protocol_execution,vary_m,m,30,FoldAudit,Challenge,30,10,20,690,15625,0.016508667,0.004329798,3,True
+protocol_execution,vary_m,m,30,FoldAudit,ProofGen,30,10,20,690,15625,2.328460333,0.276312611,3,True
+protocol_execution,vary_m,m,30,FoldAudit,Verify,30,10,20,690,15625,3.327967792,0.193007442,3,True
+protocol_execution,vary_m,m,30,FoldAudit,Audit,30,10,20,690,15625,5.672936792,0.467056400,3,True

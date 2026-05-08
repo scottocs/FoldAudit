@@ -1,3 +1,6 @@
+// Package miaoscis2026 reproduces the searchable PDP core from Miao et al.
+// SCIS 2026. The implementation models keyword-to-file matching, trapdoor
+// rows, aggregated authenticators, and the masked aggregate value mu_1.
 package miaoscis2026
 
 import (
@@ -90,6 +93,7 @@ func (p *Protocol) Store(files []struct {
 	out.MatrixSize = 2*max(len(files), len(keywordSet)) + 1
 	row := 0
 	for keyword := range keywordSet {
+		// Assign each keyword to a pseudo-random row of the searchable index matrix.
 		for {
 			candidate := int(new(big.Int).Mod(benchcore.ScalarFromBytes("miaoscis2026:row", []byte(keyword), benchcore.IntBytes(row)), big.NewInt(int64(out.MatrixSize))).Int64())
 			if _, used := out.EncryptedRows[candidate]; !used {
@@ -113,12 +117,14 @@ func (p *Protocol) Store(files []struct {
 		}
 		f.HF = p.keywordProduct(f.Keywords)
 		base := benchcore.G1Add(f.HF, h2FID(f.FID))
+		// Omega cancels the file/keyword base terms during verification.
 		f.Omega = benchcore.G1Mul(base, benchcore.Neg(p.x))
 		for j, block := range input.Blocks {
 			f.Blocks[j] = benchcore.Normalize(block)
 			f.Aux[j] = fmt.Sprintf("au-%d-%d", i, j)
 			body := benchcore.G1Add(base, h3Aux(f.Aux[j]))
 			body = benchcore.G1Add(body, benchcore.G1Mul(p.U, f.Blocks[j]))
+			// sigma_{i,j}=(H_F H_2(FID) H_3(au_{i,j}) u^{m_{i,j}})^x.
 			f.Sigmas[j] = benchcore.G1Mul(body, p.x)
 		}
 		out.Files[i] = f
@@ -130,6 +136,7 @@ func (p *Protocol) Store(files []struct {
 				plain[i] = 1
 			}
 		}
+		// Store an encrypted match row; trapdoor tokens later reveal only selected rows.
 		pad := rowPad(row, len(plain))
 		out.EncryptedRows[row] = xorBytes(plain, pad)
 	}
@@ -149,7 +156,8 @@ func (p *Protocol) Trapdoor(stored *StoredData, keywords []string) (Trapdoor, er
 		tokens[i] = TrapdoorToken{
 			Keyword: keyword,
 			Row:     row,
-			Pad:     rowPad(row, len(stored.Files)),
+			// The pad decrypts the keyword's match row without exposing other rows.
+			Pad: rowPad(row, len(stored.Files)),
 		}
 	}
 	return Trapdoor{Tokens: tokens}, nil
@@ -177,6 +185,7 @@ func (p *Protocol) challengeWith(keywords []string, trap Trapdoor, k1, k2 []byte
 	}
 	return Challenge{
 		Keywords: append([]string(nil), keywords...),
+		// k1 selects challenged blocks, while k2 derives per-file coefficients.
 		Indices:  uniqueIndices("miaoscis2026:challenge:index", k1, c, p.N),
 		Coeffs:   coeffs,
 		Trapdoor: trap,
@@ -207,6 +216,7 @@ func (p *Protocol) Prove(stored *StoredData, chal Challenge) (*Proof, error) {
 		file := stored.Files[fileIndex]
 		for pos, blockIndex := range chal.Indices {
 			coeff := chal.Coeffs[fileIndex][pos]
+			// Aggregate authenticators and data values over all keyword-matched files.
 			tAuth = benchcore.G1Add(tAuth, benchcore.G1Mul(file.Sigmas[blockIndex], coeff))
 			mu = benchcore.Add(mu, benchcore.Mul(coeff, file.Blocks[blockIndex]))
 		}
@@ -214,6 +224,7 @@ func (p *Protocol) Prove(stored *StoredData, chal Challenge) (*Proof, error) {
 	r := benchcore.Scalar("miaoscis2026/mask/r", len(matched)+len(chal.Indices))
 	R := benchcore.G1Base(r)
 	h := challengeHash(chal.Keywords, R)
+	// mu_1=mu-r*h(T_w,R) hides the aggregate data value.
 	mu1 := benchcore.Sub(mu, benchcore.Mul(r, h))
 	return &Proof{TAuth: tAuth, Mu1: mu1, R: R}, nil
 }
@@ -231,8 +242,10 @@ func (p *Protocol) Verify(stored *StoredData, chal Challenge, proof *Proof) bool
 		for pos, blockIndex := range chal.Indices {
 			coeff := chal.Coeffs[fileIndex][pos]
 			sum = benchcore.Add(sum, coeff)
+			// The H_3(aux) terms reconstruct the non-data part of each authenticator.
 			right = benchcore.G1Add(right, benchcore.G1Mul(h3Aux(file.Aux[blockIndex]), coeff))
 		}
+		// Omega removes the keyword/file identity factors accumulated in TAuth.
 		left = benchcore.G1Add(left, benchcore.G1Mul(file.Omega, sum))
 	}
 	right = benchcore.G1Add(right, benchcore.G1Mul(p.U, proof.Mu1))
@@ -320,6 +333,7 @@ func matchedByChallenge(stored *StoredData, chal Challenge) []int {
 	if len(chal.Trapdoor.Tokens) == 0 {
 		return matchingFiles(stored.Files, chal.Keywords)
 	}
+	// Trapdoor mode reconstructs the union of encrypted keyword match rows.
 	mask := make([]byte, len(stored.Files))
 	for _, token := range chal.Trapdoor.Tokens {
 		encrypted, ok := stored.EncryptedRows[token.Row]

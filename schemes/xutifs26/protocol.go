@@ -1,3 +1,6 @@
+// Package xutifs26 reproduces the MPA auditing core from Xu et al. TIFS 2026.
+// It combines per-block polynomial commitments with Merkle-authenticated tags
+// and verifies a globally aggregated KZG opening.
 package xutifs26
 
 import (
@@ -58,6 +61,7 @@ func NewProtocol(m, n, s int) *Protocol {
 	srs := make([]*bn256.G1, s)
 	power := benchcore.One()
 	for i := range srs {
+		// Public SRS element g^{alpha^i} for committing aggregate block polynomials.
 		srs[i] = benchcore.G1Base(power)
 		power = benchcore.Mul(power, alpha)
 	}
@@ -88,6 +92,7 @@ func (p *Protocol) Store(data [][][]*big.Int) (*StoredBatch, error) {
 				return nil, fmt.Errorf("file %d block %d: expected %d sectors", i, j, p.S)
 			}
 			file.Blocks[j] = benchcore.NewPoly(data[i][j])
+			// The stored tag is the KZG-style commitment g^{f_{i,j}(alpha)}.
 			file.Tags[j] = p.ownerCommit(file.Blocks[j])
 			leaves[j] = xuLeaf(file.Tags[j])
 		}
@@ -120,6 +125,7 @@ func (p *Protocol) TagVerify(stored *StoredBatch) bool {
 		}
 		leaves := make([][]byte, p.N)
 		for j := 0; j < p.N; j++ {
+			// Recompute the public commitment and the Merkle root published for the file.
 			recomputed := benchcore.CommitG1(p.SRSG1, file.Blocks[j])
 			if !benchcore.G1Eq(recomputed, file.Tags[j]) {
 				return false
@@ -142,6 +148,7 @@ func (p *Protocol) ChallengeFromSeed(seed []byte, c int) Challenge {
 	if c > p.N {
 		c = p.N
 	}
+	// One index set and one evaluation point r are shared across all local proofs.
 	indices := uniqueIndices("xutifs26:challenge:index", seed, c, p.N)
 	coeffs := make([]*big.Int, c)
 	for i := 0; i < c; i++ {
@@ -158,6 +165,7 @@ func (p *Protocol) ChallengeFromSeed(seed []byte, c int) Challenge {
 func (p *Protocol) Prove(stored *StoredBatch, chal Challenge) (*Proof, error) {
 	proof := &Proof{Files: make([]FileProof, len(stored.Files))}
 	for i, file := range stored.Files {
+		// For each file, aggregate challenged blocks as f_i(X)=sum_j v_j f_{i,j}(X).
 		agg := benchcore.NewPoly([]*big.Int{benchcore.Zero()})
 		openings := make([]TagOpening, len(chal.Indices))
 		for pos, index := range chal.Indices {
@@ -169,6 +177,7 @@ func (p *Protocol) Prove(stored *StoredBatch, chal Challenge) (*Proof, error) {
 			openings[pos] = TagOpening{Index: index, Tag: file.Tags[index], Path: path}
 		}
 		value := agg.Eval(chal.R)
+		// The witness opens f_i at the shared challenge point r.
 		wpoly, rem := agg.SubConstant(value).DivLinear(chal.R)
 		if rem.Sign() != 0 {
 			return nil, fmt.Errorf("nonzero quotient remainder")
@@ -190,6 +199,7 @@ func (p *Protocol) Verify(stored *StoredBatch, chal Challenge, proof *Proof) boo
 			return false
 		}
 		for pos, opening := range fp.Tags {
+			// Merkle authentication binds every challenged tag to its file root.
 			if opening.Index != chal.Indices[pos] || !benchcore.VerifyMerkle(xuLeaf(opening.Tag), stored.Roots[i], opening.Path) {
 				return false
 			}
@@ -198,6 +208,7 @@ func (p *Protocol) Verify(stored *StoredBatch, chal Challenge, proof *Proof) boo
 		valueGlobal = benchcore.Add(valueGlobal, fp.Value)
 		wGlobal = benchcore.G1Add(wGlobal, fp.W)
 	}
+	// Check one aggregated KZG equation over all local proofs.
 	left := benchcore.G1Add(sigmaGlobal, benchcore.G1Neg(benchcore.G1Base(valueGlobal)))
 	alphaMinusR := benchcore.G2Add(p.AlphaG2, benchcore.G2Neg(benchcore.G2Base(chal.R)))
 	return benchcore.PairingEqual(left, p.G2, wGlobal, alphaMinusR)

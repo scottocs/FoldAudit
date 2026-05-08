@@ -20,7 +20,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 from matplotlib.ticker import LogLocator, NullFormatter
-from matplotlib.transforms import ScaledTranslation
 
 
 OUT = Path("experiments/out/vi_evaluation")
@@ -50,13 +49,12 @@ MARKERS = {
 }
 
 FIGSIZE = (3.55, 2.55)
-BAR_XTICK_SHIFT_PT = 0.0
 
 FIELD_BYTES = 32
 HASH_BYTES = 32
 G1_BYTES = 64
 
-BASE_M = 5
+BASE_M = 4
 BASE_B_MB = 10
 BASE_S = 20
 BASE_C = 690
@@ -126,14 +124,6 @@ def log_y(ax: plt.Axes) -> None:
     sns.despine(ax=ax, top=True, right=True)
 
 
-def shift_xticklabels_right(ax: plt.Axes) -> None:
-    if BAR_XTICK_SHIFT_PT == 0:
-        return
-    shift = ScaledTranslation(BAR_XTICK_SHIFT_PT / 72.0, 0.0, ax.figure.dpi_scale_trans)
-    for label in ax.get_xticklabels():
-        label.set_transform(label.get_transform() + shift)
-
-
 def save_fixed_canvas(fig: plt.Figure, name: str) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     PAPER_FIGURES.mkdir(parents=True, exist_ok=True)
@@ -145,7 +135,7 @@ def save_fixed_canvas(fig: plt.Figure, name: str) -> None:
 def build_communication_rows() -> pd.DataFrame:
     rows: list[dict[str, float | int | str]] = []
 
-    for b_mb in range(10, 101, 10):
+    for b_mb in range(10, 51, 10):
         n = chunk_count(b_mb, BASE_S, BASE_C)
         for scheme in SCHEMES:
             rows.append(
@@ -162,7 +152,7 @@ def build_communication_rows() -> pd.DataFrame:
                 }
             )
 
-    for m in range(5, 31, 5):
+    for m in range(4, 21, 4):
         n = chunk_count(BASE_B_MB, BASE_S, BASE_C)
         for scheme in SCHEMES:
             rows.append(
@@ -184,41 +174,6 @@ def build_communication_rows() -> pd.DataFrame:
     return df
 
 
-def plot_phase_bars() -> None:
-    data = pd.read_csv(OUT / "baseline.csv")
-    data = data[data.phase.isin(["Store", "ProofGen", "Verify"])].copy()
-    data["scheme"] = pd.Categorical(data["scheme"], categories=SCHEMES, ordered=True)
-
-    fig, ax = plt.subplots(figsize=FIGSIZE)
-    width = 0.24
-    phases = ["Store", "ProofGen", "Verify"]
-    x_positions = list(range(len(SCHEMES)))
-    for offset, phase, color in zip([-width, 0, width], phases, ["#9ECAE1", "#74C476", "#FD8D3C"]):
-        part = data[data.phase == phase].sort_values("scheme")
-        bars = ax.bar(
-            [x + offset for x in x_positions],
-            part["seconds"],
-            width=width,
-            label=phase,
-            color=color,
-            edgecolor="#222222",
-            linewidth=0.45,
-        )
-        if phase == "Verify":
-            for bar in bars:
-                bar.set_hatch("//")
-
-    log_y(ax)
-    ax.set_xticks(x_positions)
-    ax.set_xticklabels([DISPLAY[s] for s in SCHEMES], rotation=0, ha="center")
-    ax.tick_params(axis="x", labelsize=7.5)
-    shift_xticklabels_right(ax)
-    ax.set_ylabel("Time (s, log)")
-    ax.legend(ncol=3, frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.02), borderaxespad=0.0)
-    fig.tight_layout(rect=(0, 0, 1, 0.90))
-    save_fixed_canvas(fig, "baseline_phase_overhead")
-
-
 def plot_store_communication(df: pd.DataFrame) -> None:
     data = df[(df["scenario"] == "vary_B") & (df["metric"] == "Store")].copy()
     fig, ax = plt.subplots(figsize=FIGSIZE)
@@ -235,7 +190,7 @@ def plot_store_communication(df: pd.DataFrame) -> None:
     log_y(ax)
     ax.set_xlabel("File size B (MB)")
     ax.set_ylabel("Store comm. (MiB, log)")
-    ax.set_xticks([10, 20, 40, 60, 80, 100])
+    ax.set_xticks([10, 20, 30, 40, 50])
     ax.legend(
         ncol=5,
         frameon=False,
@@ -267,7 +222,7 @@ def plot_proof_communication(df: pd.DataFrame) -> None:
     log_y(ax)
     ax.set_xlabel("Batch size m")
     ax.set_ylabel("Audit-proof comm. (KiB, log)")
-    ax.set_xticks([5, 10, 15, 20, 25, 30])
+    ax.set_xticks([4, 8, 12, 16, 20])
     ax.legend(
         ncol=5,
         frameon=False,
@@ -286,10 +241,9 @@ def plot_proof_communication(df: pd.DataFrame) -> None:
 def main() -> None:
     setup_style()
     df = build_communication_rows()
-    plot_phase_bars()
     plot_store_communication(df)
     plot_proof_communication(df)
-    print("Rendered baseline_phase_overhead.pdf, store_communication_vs_file_size.pdf, and proof_communication_vs_m.pdf")
+    print("Rendered store_communication_vs_file_size.pdf and proof_communication_vs_m.pdf")
 
 
 if __name__ == "__main__":
