@@ -12,3 +12,35 @@ __pycache__/
 experiments/out/
 paper/
 TDSC/
+TDSC out-of-scope/appendix.pdf
+TDSC out-of-scope/cover letter.docx
+TDSC out-of-scope/cover letter.pdf
+TDSC out-of-scope/FoldAudit.zip
+TDSC out-of-scope/main.pdf
+TIFS/appendix.pdf
+TIFS/cover letter.docx
+TIFS/cover letter.pdf
+TIFS/FoldAudit.zip
+TIFS/main.pdf
+TIFS/FoldAudit/boruichen.eps
+TIFS/FoldAudit/haibinkan.eps
+TIFS/FoldAudit/IEEEtran.cls
+TIFS/FoldAudit/jiheng.eps
+TIFS/FoldAudit/liangzhang.eps
+TIFS/FoldAudit/main.tex
+TIFS/FoldAudit/xuyanwei.eps
+TIFS/FoldAudit/figures/pdpflowchart.pdf
+TIFS/FoldAudit/figures/attack_simulation/cancellation_attack_cost.pdf
+TIFS/FoldAudit/figures/attack_simulation/data_leakage_attack_cost.pdf
+TIFS/FoldAudit/figures/attack_simulation/sampling_detection_probability.pdf
+TIFS/FoldAudit/figures/vi_evaluation/proof_communication_vs_m.pdf
+TIFS/FoldAudit/figures/vi_evaluation/proofgen_vs_file_size.pdf
+TIFS/FoldAudit/figures/vi_evaluation/proofgen_vs_m.pdf
+TIFS/FoldAudit/figures/vi_evaluation/proofgen_vs_s.pdf
+TIFS/FoldAudit/figures/vi_evaluation/store_communication_vs_file_size.pdf
+TIFS/FoldAudit/figures/vi_evaluation/store_vs_file_size.pdf
+TIFS/FoldAudit/figures/vi_evaluation/store_vs_m.pdf
+TIFS/FoldAudit/figures/vi_evaluation/store_vs_s.pdf
+TIFS/FoldAudit/figures/vi_evaluation/verify_vs_file_size.pdf
+TIFS/FoldAudit/figures/vi_evaluation/verify_vs_m.pdf
+TIFS/FoldAudit/figures/vi_evaluation/verify_vs_s.pdf
